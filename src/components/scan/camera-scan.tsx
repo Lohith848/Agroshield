@@ -227,9 +227,9 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+    <div className="fixed inset-0 bg-black z-50 flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {/* Header */}
-      <div className="bg-gray-900 text-white p-4 flex items-center justify-between">
+      <div className="bg-gray-900 text-white p-4 flex items-center justify-between" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}>
         <div className="flex items-center">
           <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center mr-3">
             <span className="text-white font-bold text-xs">AS</span>
@@ -259,9 +259,10 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <div className="text-center text-white">
+                  <div className="text-center text-white px-4">
                     <Camera className="w-16 h-16 mx-auto mb-4 text-gray-500" />
                     <p className="text-lg">Camera is starting...</p>
+                    <p className="text-sm text-gray-400 mt-2">Please allow camera access</p>
                     <Button 
                       onClick={startCamera} 
                       className="mt-4 bg-green-600 hover:bg-green-700"
@@ -274,15 +275,14 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
 
               {/* Capture Button Overlay */}
               {isScanning && (
-                <div className="absolute bottom-8 left-0 right-0 flex justify-center">
+                <div className="absolute bottom-8 left-0 right-0 flex justify-center px-4">
                   <div className="flex items-center space-x-6">
                     {/* Gallery Upload Placeholder */}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="text-white hover:bg-gray-800 rounded-full"
+                      className="text-white hover:bg-gray-800 rounded-full flex-shrink-0"
                       onClick={() => {
-                        // Future: implement gallery upload
                         alert('Gallery upload coming soon! Use camera to capture.')
                       }}
                     >
@@ -292,7 +292,7 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                     {/* Capture Button */}
                     <button
                       onClick={capturePhoto}
-                      className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-white bg-opacity-20 hover:bg-opacity-30 transition-all"
+                      className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-white bg-opacity-20 hover:bg-opacity-30 transition-all flex-shrink-0"
                     >
                       <div className="w-16 h-16 rounded-full bg-white"></div>
                     </button>
@@ -301,9 +301,8 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="text-white hover:bg-gray-800 rounded-full"
+                      className="text-white hover:bg-gray-800 rounded-full flex-shrink-0"
                       onClick={() => {
-                        // Future: toggle camera
                         alert('Camera toggle coming soon!')
                       }}
                     >
@@ -324,7 +323,7 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
             </div>
 
             {/* Farm Selection & Controls */}
-            <div className="bg-gray-100 p-4 border-t">
+            <div className="bg-gray-100 p-4 border-t" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
               <div className="max-w-md mx-auto space-y-4">
                 {/* Farm Selector */}
                 <div className="space-y-2">
@@ -363,28 +362,28 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
               </div>
             </div>
           </>
-        ) : (
-          <>
-            {/* Captured Image Preview */}
-            <div className="flex-1 relative bg-black flex items-center justify-center">
-              <img 
-                src={capturedImage} 
-                alt="Captured scan" 
-                className="max-w-full max-h-full object-contain"
-              />
-              
-              {/* Location Badge */}
-              {gpsLocation && (
-                <div className="absolute top-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-full text-sm flex items-center">
-                  <MapPin className="w-4 h-4 mr-1" />
-                  {gpsLocation.lat.toFixed(4)}, {gpsLocation.lng.toFixed(4)}
-                </div>
-              )}
-            </div>
+         ) : (
+           <>
+             {/* Captured Image Preview */}
+             <div className="flex-1 relative bg-black flex items-center justify-center">
+               <img 
+                 src={capturedImage} 
+                 alt="Captured scan" 
+                 className="max-w-full max-h-full object-contain"
+               />
+               
+               {/* Location Badge */}
+               {gpsLocation && (
+                 <div className="absolute top-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-full text-sm flex items-center">
+                   <MapPin className="w-4 h-4 mr-1" />
+                   {gpsLocation.lat.toFixed(4)}, {gpsLocation.lng.toFixed(4)}
+                 </div>
+               )}
+             </div>
 
-            {/* Bottom Controls */}
-            <div className="bg-gray-100 p-4 border-t">
-              <div className="max-w-md mx-auto space-y-4">
+             {/* Bottom Controls */}
+             <div className="bg-gray-100 p-4 border-t" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+               <div className="max-w-md mx-auto space-y-4">
                 {/* Farm Selector (passed to upload) */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Select Field</label>

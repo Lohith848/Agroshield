@@ -173,7 +173,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               <h1 className="text-xl font-semibold text-gray-900">AgroShield</h1>
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 md:space-x-4">
               {weather && !loadingWeather && (
                 <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600">
                   <Cloud className="w-4 h-4" />
@@ -183,13 +183,13 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                   <span>{weather.humidity}%</span>
                 </div>
               )}
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="hidden md:flex">
                 <Bell className="w-4 h-4 mr-2" />
                 Alerts
               </Button>
               <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
+                <LogOut className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Logout</span>
               </Button>
               <div className="flex items-center">
                 <Avatar className="w-8 h-8 mr-2">
@@ -222,39 +222,39 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         {/* Weather Card (Top) */}
         {weather && !loadingWeather && (
           <Card className="mb-6">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+            <CardContent className="p-4 md:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center space-x-4">
                   <img 
                     src={getWeatherIconUrl(weather.icon)} 
                     alt={weather.description}
-                    className="w-16 h-16"
+                    className="w-12 h-12 md:w-16 md:h-16"
                   />
                   <div>
-                    <div className="flex items-center space-x-2">
-                      <h3 className="text-2xl font-bold text-gray-900">{weather.temperature}°C</h3>
-                      <Badge variant="outline" className="capitalize">
+                    <div className="flex items-center space-x-2 flex-wrap">
+                      <h3 className="text-xl md:text-2xl font-bold text-gray-900">{weather.temperature}°C</h3>
+                      <Badge variant="outline" className="capitalize text-xs md:text-sm">
                         {weather.description}
                       </Badge>
                     </div>
-                    <p className="text-gray-600">Feels like {weather.feels_like}°C</p>
-                    <p className="text-sm text-gray-500">{weather.location}</p>
+                    <p className="text-xs md:text-sm text-gray-600">Feels like {weather.feels_like}°C</p>
+                    <p className="text-xs md:text-sm text-gray-500">{weather.location}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid grid-cols-3 gap-3 md:gap-6 w-full sm:w-auto">
                   <div className="text-center">
-                    <Droplets className="w-5 h-5 mx-auto text-blue-500 mb-1" />
-                    <p className="text-sm font-semibold">{weather.humidity}%</p>
+                    <Droplets className="w-4 h-4 md:w-5 md:h-5 mx-auto text-blue-500 mb-1" />
+                    <p className="text-sm md:text-base font-semibold">{weather.humidity}%</p>
                     <p className="text-xs text-gray-500">Humidity</p>
                   </div>
                   <div className="text-center">
-                    <Wind className="w-5 h-5 mx-auto text-gray-500 mb-1" />
-                    <p className="text-sm font-semibold">{weather.wind_speed} m/s</p>
+                    <Wind className="w-4 h-4 md:w-5 md:h-5 mx-auto text-gray-500 mb-1" />
+                    <p className="text-sm md:text-base font-semibold">{weather.wind_speed} m/s</p>
                     <p className="text-xs text-gray-500">Wind</p>
                   </div>
                   <div className="text-center">
-                    <Thermometer className="w-5 h-5 mx-auto text-red-500 mb-1" />
-                    <p className="text-sm font-semibold">{weather.pressure} hPa</p>
+                    <Thermometer className="w-4 h-4 md:w-5 md:h-5 mx-auto text-red-500 mb-1" />
+                    <p className="text-sm md:text-base font-semibold">{weather.pressure} hPa</p>
                     <p className="text-xs text-gray-500">Pressure</p>
                   </div>
                 </div>
