@@ -301,10 +301,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {recentScans.map((scan) => (
-                    <div key={scan.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex-1">
+                    <div key={scan.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-lg gap-2">
+                      <div className="flex-1 w-full sm:w-auto">
                         <div className="flex items-center justify-between mb-1">
                           <p className="font-medium text-sm">{scan.farm}</p>
                           <Badge className={
@@ -319,7 +319,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                         <p className="text-xs text-gray-600">{scan.disease}</p>
                         <p className="text-xs text-gray-500 mt-1">{scan.time}</p>
                       </div>
-                      <div className="text-right ml-4">
+                      <div className="text-right ml-0 sm:ml-4">
                         <p className="text-sm font-medium">{scan.confidence}%</p>
                         <p className="text-xs text-gray-500">confidence</p>
                       </div>
