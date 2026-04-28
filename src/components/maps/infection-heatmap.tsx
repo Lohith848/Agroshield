@@ -7,15 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Badge } from '@/components/ui/badge'
 import { 
   MapPin, 
   Plus, 
   Trash2, 
-  AlertTriangle,
-  Thermometer,
-  Droplets,
-  Leaf
+  Thermometer
 } from 'lucide-react'
 
 // Dynamically import Leaflet
