@@ -1,13 +1,12 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
-import { generateOTP, storeOTP, verifyOTP, sendEmailOTP } from '@/lib/email-otp'
 import { Mail, User, MapPin, Globe } from 'lucide-react'
 
 interface AuthFormProps {
@@ -18,6 +17,7 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
   const [isLogin, setIsLogin] = useState(false)
   const [loading, setLoading] = useState(false)
   const [otpSent, setOtpSent] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   
   const [formData, setFormData] = useState({
     email: '',
@@ -29,12 +29,21 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
     otp: ''
   })
   
-  const [generatedOTP, setGeneratedOTP] = useState<string>('')
-
+  // Cooldown timer for resend OTP
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    if (cooldown > 0) {
+      timer = setTimeout(() => setCooldown(cooldown - 1), 1000)
+    }
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [cooldown])
+  
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
-
+  
   const handleSendOtp = async () => {
     if (!formData.email) {
       alert('Please enter your email address')
@@ -52,25 +61,25 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
-      // Generate and store custom OTP
-      const otp = generateOTP()
-      storeOTP(formData.email, otp)
-      setGeneratedOTP(otp)
+      console.log('Sending OTP to:', formData.email)
       
-      console.log('Sending OTP to email:', formData.email)
-      const emailSent = await sendEmailOTP(formData.email, otp)
-      
-      if (!emailSent) {
-        throw new Error('Failed to send email OTP')
+      // Use Supabase's built-in OTP flow
+      const { error } = await supabase.auth.signInWithOtp({
+        email: formData.email,
+        options: {
+          shouldCreateUser: !isLogin, // Create user only in sign-up mode
+        }
+      })
+
+      if (error) {
+        console.error('Supabase OTP Error:', error)
+        throw error
       }
 
       console.log('OTP sent successfully')
       setOtpSent(true)
+      setCooldown(30) // 30 seconds cooldown for resend
       
-      // Development helper - show OTP in console and UI
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🔓 DEV MODE - OTP for ${formData.email}: ${otp}`)
-      }
     } catch (error) {
       console.error('Error sending OTP:', error)
       alert(`Failed to send OTP: ${error instanceof Error ? error.message : 'Please try again'}`)
@@ -79,6 +88,11 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
     }
   }
 
+  const handleResendOtp = async () => {
+    if (cooldown > 0) return
+    await handleSendOtp()
+  }
+  
   const handleVerifyOtp = async () => {
     if (!formData.otp || formData.otp.length !== 6) {
       alert('Please enter a valid 6-digit OTP')
@@ -91,93 +105,27 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
-      // Verify custom OTP
-      const isValidOTP = verifyOTP(formData.email, formData.otp)
-      
-      if (!isValidOTP) {
-        throw new Error('Invalid or expired OTP')
-      }
-
-      // Create or authenticate user in Supabase
-      const { data, error } = await supabase.auth.signUp({
+      // Verify OTP using Supabase
+      const { data, error } = await supabase.auth.verifyOtp({
         email: formData.email,
-        password: 'temp-password-' + Date.now(), // Temporary password
-        options: {
-          data: {
-            name: formData.name,
-            role: formData.role,
-            language: formData.language,
-            district: formData.district,
-            village: formData.village,
-          }
-        }
+        token: formData.otp,
+        type: 'signup' // email OTP verification type
       })
 
-      if (error && !error.message.includes('already registered')) {
-        throw error
+      if (error) throw error
+
+      // Get user from response
+      const user = data.user
+      if (!user) {
+        throw new Error('No user returned after verification')
       }
 
-      // If user already exists, sign them in
-      if (error?.message.includes('already registered')) {
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: 'temp-password-' + Date.now()
-        })
-        
-        if (signInError) {
-          // For existing users, we need to handle this differently
-          // For now, create a mock user object
-          const mockUser = {
-            id: 'temp-user-' + Date.now(),
-            email: formData.email,
-            user_metadata: {
-              name: formData.name,
-              role: formData.role,
-              language: formData.language,
-              district: formData.district,
-              village: formData.village,
-            }
-          }
-          
-          // Save user session to localStorage
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('agroshield_user', JSON.stringify(mockUser))
-            console.log('💾 Session saved for:', mockUser.email)
-          }
-          
-          onSuccess(mockUser)
-          return
-        }
-        
-        if (!isLogin && signInData.user) {
-          // Update profile if needed
-          await supabase
-            .from('profiles')
-            .upsert({
-              id: signInData.user.id,
-              name: formData.name,
-              email: formData.email,
-              role: formData.role,
-              language: formData.language,
-              district: formData.district,
-              village: formData.village,
-              updated_at: new Date().toISOString(),
-            })
-        }
-        
-        // Save user session to localStorage
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('agroshield_user', JSON.stringify(signInData.user))
-          console.log('💾 Session saved for:', signInData.user.email)
-        }
-        
-        onSuccess(signInData.user)
-      } else if (data.user) {
-        // Create profile for new user
+      // For sign-up, create profile
+      if (!isLogin) {
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
-            id: data.user.id,
+            id: user.id,
             name: formData.name,
             email: formData.email,
             role: formData.role,
@@ -187,24 +135,42 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
             created_at: new Date().toISOString(),
           })
 
-        if (profileError) console.error('Profile creation error:', profileError)
-        
-        // Save user session to localStorage
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('agroshield_user', JSON.stringify(data.user))
-          console.log('💾 Session saved for:', data.user.email)
+        if (profileError) {
+          console.error('Profile creation error:', profileError)
+          // Don't throw - allow login even if profile creation fails
         }
-        
-        onSuccess(data.user)
       }
+
+      // Fetch user profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      // Save user session to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('agroshield_user', JSON.stringify({ ...user, profile }))
+        console.log('💾 Session saved for:', user.email)
+      }
+      
+      onSuccess({ ...user, profile })
+      
     } catch (error) {
       console.error('Error verifying OTP:', error)
-      alert('Failed to verify OTP. Please try again.')
+      alert(`Failed to verify OTP: ${error instanceof Error ? error.message : 'Please try again'}`)
     } finally {
       setLoading(false)
     }
   }
 
+  const handleModeToggle = () => {
+    setIsLogin(!isLogin)
+    setOtpSent(false)
+    setCooldown(0)
+    setFormData(prev => ({ ...prev, otp: '' }))
+  }
+  
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 p-4">
       <div className="w-full max-w-md">
@@ -323,10 +289,10 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
 
                 <Button 
                   onClick={handleSendOtp} 
-                  disabled={loading}
+                  disabled={loading || cooldown > 0}
                   className="w-full bg-green-600 hover:bg-green-700"
                 >
-                  {loading ? 'Sending...' : 'Send Email OTP'}
+                  {loading ? 'Sending...' : `Send OTP ${cooldown > 0 ? `(Resend available in ${cooldown}s)` : ''}`}
                 </Button>
               </>
             ) : (
@@ -339,19 +305,11 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
                     placeholder="123456"
                     maxLength={6}
                     value={formData.otp}
-                    onChange={(e) => handleInputChange('otp', e.target.value)}
+                    onChange={(e) => handleInputChange('otp', e.target.value.replace(/\D/g, ''))}
                   />
-                  {process.env.NODE_ENV === 'development' && generatedOTP && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-yellow-800">🔓 Development OTP:</span>
-                        <span className="font-mono text-yellow-900 bg-yellow-100 px-2 py-1 rounded">
-                          {generatedOTP}
-                        </span>
-                      </div>
-                      <p className="text-yellow-700 mt-1">Use this code for testing (shown in dev mode only)</p>
-                    </div>
-                  )}
+                  <p className="text-sm text-gray-600 text-center">
+                    OTP sent to {formData.email}
+                  </p>
                 </div>
 
                 <Button 
@@ -362,13 +320,28 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
                   {loading ? 'Verifying...' : 'Verify & Continue'}
                 </Button>
 
-                <Button 
-                  variant="outline" 
-                  onClick={() => setOtpSent(false)}
-                  className="w-full"
-                >
-                  Back
-                </Button>
+                <div className="space-y-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setOtpSent(false)
+                      setCooldown(0)
+                      setFormData(prev => ({ ...prev, otp: '' }))
+                    }}
+                    className="w-full"
+                  >
+                    Back
+                  </Button>
+                  
+                  <Button 
+                    variant="link" 
+                    onClick={handleResendOtp}
+                    disabled={cooldown > 0 || loading}
+                    className="w-full"
+                  >
+                    {cooldown > 0 ? `Resend OTP available in ${cooldown}s` : "Didn't receive OTP? Resend"}
+                  </Button>
+                </div>
               </>
             )}
 
@@ -376,7 +349,7 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
               {isLogin ? "Don't have an account?" : "Already have an account?"}
               <Button 
                 variant="link" 
-                onClick={() => setIsLogin(!isLogin)}
+                onClick={handleModeToggle}
                 className="ml-1 p-0 h-auto font-normal text-green-600 hover:text-green-700"
               >
                 {isLogin ? 'Sign Up' : 'Sign In'}
