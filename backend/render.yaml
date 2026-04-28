@@ -2,14 +2,11 @@ services:
   - type: web
     name: agroshield-backend
     env: python
-    region: oregon  # or closest to your users
+    region: oregon
     plan: free
     buildCommand: |
-      # Install system dependencies
       apt-get update && apt-get install -y libgl1 libglib2.0-0
-      # Install Python dependencies
       pip install -r requirements.txt
-      # Download YOLOv8 model if not present
       if [ ! -f "models/yolov8n.pt" ]; then
         echo "Downloading YOLOv8 nano model..."
         mkdir -p models
@@ -17,10 +14,10 @@ services:
       fi
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
+      # Set these in Render dashboard -> Environment tab (marked as secret)
       - key: SUPABASE_URL
-        value: https://kvdpgagqixalrtjdtwgt.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2ZHBnYWdxaXhhbHJ0amR0d2d0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzM3MzYyNywiZXhwIjoyMDkyOTQ5NjI3fQ.tMpePIJ2OtwIVNkoeToLlp7R7qpi9v8O-JB7eorUJUY
+      # Pre-configured API keys (can be changed if needed)
       - key: OPENWEATHER_API_KEY
         value: 10d719934d01b27f7790d4babc9ca397
       - key: AGROMONITORING_API_KEY
