@@ -109,7 +109,7 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
       const { data, error } = await supabase.auth.verifyOtp({
         email: formData.email,
         token: formData.otp,
-        type: 'signup' // email OTP verification type
+        type: 'email' // email OTP verification type (works for both signup and login)
       })
 
       if (error) throw error
