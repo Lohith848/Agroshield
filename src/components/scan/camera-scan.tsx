@@ -57,27 +57,46 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      // Request camera with optimal settings
+      const constraints: MediaStreamConstraints = {
         video: { 
           facingMode: 'environment',
           width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } 
-      })
+          height: { ideal: 720 },
+          facingMode: { ideal: 'environment' } // Prefer back camera
+        },
+        audio: false
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         streamRef.current = stream
-        // Wait for video to be ready
+        // Wait for video to be ready and play
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play()
+          videoRef.current?.play().catch(err => {
+            console.error('Video play error:', err)
+            alert('Camera preview failed. Please check permissions.')
+          })
         }
       }
       
       setIsScanning(true)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accessing camera:', error)
-      alert('Unable to access camera. Please check permissions and ensure you are using HTTPS or localhost.')
+      let message = 'Unable to access camera. '
+      if (error.name === 'NotAllowedError') {
+        message += 'Please allow camera permissions and try again.'
+      } else if (error.name === 'NotFoundError') {
+        message += 'No camera found on this device.'
+      } else if (error.name === 'NotReadableError') {
+        message += 'Camera is in use by another application.'
+      } else {
+        message += error.message || 'Please check permissions.'
+      }
+      alert(message)
+      setIsScanning(false)
     }
   }
 
@@ -148,7 +167,7 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       const blob = await response.blob()
       const file = new File([blob], 'scan.jpg', { type: 'image/jpeg' })
 
-      // Create form data
+      // Create form data for Groq endpoint
       const formData = new FormData()
       formData.append('file', file)
       formData.append('user_id', user.id)
@@ -158,23 +177,33 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
         formData.append('gps_lng', gpsLocation.lng.toString())
       }
 
-      // Upload to backend
-      const uploadResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scan/upload`, {
+      // Upload to Groq AI backend
+      const uploadResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scan/analyze-groq`, {
         method: 'POST',
         body: formData
       })
 
       if (!uploadResponse.ok) {
-        throw new Error('Upload failed')
+        const errorData = await uploadResponse.json().catch(() => ({}))
+        throw new Error(errorData.detail || 'Upload failed')
       }
 
       const result = await uploadResponse.json()
-      setScanResult(result)
-      onScanComplete(result)
+      
+      // Handle Groq result format
+      const scanResult = {
+        result: result.result || result,
+        image_url: result.image_url || capturedImage,
+        disease_info: result.disease_info,
+        scan_id: result.scan_id
+      }
+      
+      setScanResult(scanResult)
+      onScanComplete(scanResult)
 
     } catch (error) {
-      console.error('Error uploading scan:', error)
-      alert('Failed to upload scan. Please try again.')
+      console.error('Error analyzing scan:', error)
+      alert(`Failed to analyze image: ${error instanceof Error ? error.message : 'Please try again'}`)
     } finally {
       setIsUploading(false)
     }
