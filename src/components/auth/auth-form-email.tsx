@@ -20,7 +20,6 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
   
   const [formData, setFormData] = useState({
     email: '',
-    phone: '',
     name: '',
     role: 'farmer',
     language: 'english',
@@ -34,17 +33,12 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
   }
 
   const handleSendOtp = async () => {
-    if (!formData.email && !formData.phone) {
-      alert('Please enter email or phone number')
+    if (!formData.email) {
+      alert('Please enter your email address')
       return
     }
 
-    if (formData.phone && formData.phone.length !== 10) {
-      alert('Please enter a valid 10-digit phone number')
-      return
-    }
-
-    if (formData.email && !formData.email.includes('@')) {
+    if (!formData.email.includes('@')) {
       alert('Please enter a valid email address')
       return
     }
@@ -55,35 +49,17 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
-      // Try phone first, fallback to email
-      if (formData.phone) {
-        console.log('Sending OTP to phone:', `+91${formData.phone}`)
-        const { error } = await supabase.auth.signInWithOtp({
-          phone: `+91${formData.phone}`,
-        })
-        if (error) throw error
-      } else {
-        console.log('Sending OTP to email:', formData.email)
-        const { error } = await supabase.auth.signInWithOtp({
-          email: formData.email,
-        })
-        if (error) throw error
-      }
+      console.log('Sending OTP to email:', formData.email)
+      const { error } = await supabase.auth.signInWithOtp({
+        email: formData.email,
+      })
+      if (error) throw error
 
       console.log('OTP sent successfully')
       setOtpSent(true)
     } catch (error) {
       console.error('Error sending OTP:', error)
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Unsupported phone provider')) {
-          alert('Phone authentication not configured. Please use email instead.')
-        } else {
-          alert(`Failed to send OTP: ${error.message}`)
-        }
-      } else {
-        alert('Failed to send OTP. Please try again.')
-      }
+      alert(`Failed to send OTP: ${error instanceof Error ? error.message : 'Please try again'}`)
     } finally {
       setLoading(false)
     }
@@ -101,19 +77,11 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
-      const verifyOptions: any = {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: formData.email,
         token: formData.otp,
-        type: formData.email ? 'email' : 'sms'
-      }
-      
-      if (formData.email) {
-        verifyOptions.email = formData.email
-      }
-      if (formData.phone) {
-        verifyOptions.phone = `+91${formData.phone}`
-      }
-      
-      const { data, error } = await supabase.auth.verifyOtp(verifyOptions)
+        type: 'email'
+      })
 
       if (error) throw error
 
@@ -124,7 +92,6 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
           .insert({
             id: data.user.id,
             name: formData.name,
-            phone: formData.phone,
             email: formData.email,
             role: formData.role,
             language: formData.language,
@@ -168,7 +135,7 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
               <>
                 {/* Email Input */}
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Address (Alternative to Phone)</Label>
+                  <Label htmlFor="email">Email Address</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
@@ -177,24 +144,6 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
                       placeholder="farmer@example.com"
                       value={formData.email}
                       onChange={(e) => handleInputChange('email', e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="text-center text-sm text-gray-500">OR</div>
-
-                {/* Phone Input */}
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="phone"
-                      type="tel"
-                      placeholder="9876543210"
-                      value={formData.phone}
-                      onChange={(e) => handleInputChange('phone', e.target.value)}
                       className="pl-10"
                     />
                   </div>
@@ -284,7 +233,7 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
                   disabled={loading}
                   className="w-full bg-green-600 hover:bg-green-700"
                 >
-                  {loading ? 'Sending...' : `Send ${formData.email ? 'Email' : 'Phone'} OTP`}
+                  {loading ? 'Sending...' : 'Send Email OTP'}
                 </Button>
               </>
             ) : (
