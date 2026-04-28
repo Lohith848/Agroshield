@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -23,7 +23,7 @@ interface CameraScanProps {
   onClose?: () => void
 }
 
-export function CameraScan({ user, onScanComplete }: CameraScanProps) {
+export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
   const [isScanning, setIsScanning] = useState(false)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const [scanResult, setScanResult] = useState<any>(null)

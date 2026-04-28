@@ -23,10 +23,6 @@ const TileLayer = dynamic(
   () => import('react-leaflet').then((mod) => mod.TileLayer),
   { ssr: false }
 )
-const Marker = dynamic(
-  () => import('react-leaflet').then((mod) => mod.Marker),
-  { ssr: false }
-)
 const Circle = dynamic(
   () => import('react-leaflet').then((mod) => mod.Circle),
   { ssr: false }
@@ -35,6 +31,28 @@ const Popup = dynamic(
   () => import('react-leaflet').then((mod) => mod.Popup),
   { ssr: false }
 )
+
+// Map events handler component
+function MapEvents({ onMapClick, enabled }: { onMapClick: (lat: number, lng: number) => void, enabled: boolean }) {
+  const [useMapEvents, setUseMapEvents] = useState<any>(null)
+
+  useEffect(() => {
+    import('react-leaflet').then((mod) => {
+      setUseMapEvents(() => mod.useMapEvents)
+    })
+  }, [])
+
+  if (!useMapEvents || !enabled) return null
+
+  const map = useMapEvents({
+    click(e: any) {
+      const { lat, lng } = e.latlng
+      onMapClick(lat, lng)
+    }
+  })
+
+  return null
+}
 
 interface ScanData {
   id: string
@@ -220,15 +238,14 @@ export function InfectionHeatmap({ user, selectedFarmId }: InfectionHeatmapProps
                     center={mapCenter}
                     zoom={mapZoom}
                     style={{ height: '100%', width: '100%' }}
-                    onClick={(e: any) => {
-                      const { lat, lng } = e.latlng
-                      handleMapClick(lat, lng)
-                    }}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     />
+
+                    {/* Map Click Handler */}
+                    <MapEvents onMapClick={handleMapClick} enabled={showManualEntry} />
 
                     {/* Disease Points */}
                     {allPoints.map(point => (
