@@ -1,0 +1,17 @@
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://kvdpgagqixalrtjdtwgt.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2ZHBnYWdxaXhhbHJ0amR0d2d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNzM2MjcsImV4cCI6MjA5Mjk0OTYyN30.5rMJ9VU_s2PMlqh8287VrPwqxeAO6K8ptvyFAqoyHr0
+
+# API Configuration
+# For local development:
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# For production (uncomment and update when backend is deployed):
+# NEXT_PUBLIC_API_URL=https://your-backend-domain.com
+
+# OpenStreetMap Configuration
+# NO API KEY NEEDED - OpenStreetMap is completely FREE! 🎉
+# The maps will work automatically without any configuration.
+
+# Optional: Custom tile server (if you want alternative map styles)
+# NEXT_PUBLIC_OSM_TILE_URL=https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png

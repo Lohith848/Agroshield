@@ -17,9 +17,13 @@ import {
   AlertTriangle,
   TrendingUp,
   Calendar,
-  Phone
+  Phone,
+  Activity,
+  Layers
 } from 'lucide-react'
 import { CameraScan } from '@/components/scan/camera-scan'
+import { FieldMap } from '@/components/maps/field-map'
+import { InfectionHeatmap } from '@/components/maps/infection-heatmap'
 
 interface DashboardProps {
   user: any
@@ -28,12 +32,18 @@ interface DashboardProps {
 export function Dashboard({ user }: DashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showCameraScan, setShowCameraScan] = useState(false)
+  const [selectedFarmId, setSelectedFarmId] = useState<string>('')
 
   const profile = user.profile
 
   const handleScanComplete = (result: any) => {
     setShowCameraScan(false)
     // Refresh dashboard data or show success message
+  }
+
+  const handleFieldSaved = (field: any) => {
+    // Handle field save
+    console.log('Field saved:', field)
   }
 
   const stats = [
@@ -215,10 +225,11 @@ export function Dashboard({ user }: DashboardProps) {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="scans">Scans</TabsTrigger>
             <TabsTrigger value="fields">Fields</TabsTrigger>
+            <TabsTrigger value="heatmap">Heatmap</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
@@ -320,24 +331,11 @@ export function Dashboard({ user }: DashboardProps) {
           </TabsContent>
 
           <TabsContent value="fields" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Field Management</CardTitle>
-                <CardDescription>
-                  Manage your farms and field boundaries
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <Map className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">No fields added yet. Add your first farm!</p>
-                  <Button className="bg-green-600 hover:bg-green-700">
-                    <Map className="w-4 h-4 mr-2" />
-                    Add Field
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <FieldMap user={user} onFieldSaved={handleFieldSaved} />
+          </TabsContent>
+
+          <TabsContent value="heatmap" className="space-y-6">
+            <InfectionHeatmap user={user} selectedFarmId={selectedFarmId} />
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">

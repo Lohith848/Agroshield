@@ -1,0 +1,9 @@
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://kvdpgagqixalrtjdtwgt.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2ZHBnYWdxaXhhbHJ0amR0d2d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNzM2MjcsImV4cCI6MjA5Mjk0OTYyN30.5rMJ9VU_s2PMlqh8287VrPwqxeAO6K8ptvyFAqoyHr0
+
+# API Configuration
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# OpenStreetMap Configuration (No API key required - FREE!)
+# NEXT_PUBLIC_OPENSTREETMAP_TILE_URL=https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
