@@ -12,22 +12,31 @@ from ai_service import detection_service, initialize_ai_service
 
 load_dotenv()
 
+# Get port from environment (Render sets this)
+PORT = int(os.getenv("PORT", 8000))
+
 app = FastAPI(title="AgroShield API", version="1.0.0")
 
-# CORS middleware
+# CORS middleware - allow all origins in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://agroshield.vercel.app"],
+    allow_origins=["*"],  # Allow all origins - adjust for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Supabase client
-supabase: Client = create_client(
-    os.getenv("SUPABASE_URL", ""),
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-)
+# Supabase client - exit if missing
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+if not supabase_url or not supabase_key:
+    print("⚠️  WARNING: Supabase environment variables not set!")
+    print("   SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+    # Create empty client (will fail on DB operations)
+    supabase = None
+else:
+    supabase = create_client(supabase_url, supabase_key)
 
 # Security
 security = HTTPBearer()
@@ -388,133 +397,29 @@ async def get_disease_information(disease_class: str):
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    initialize_ai_service()
-
-# Weather API Endpoint
-@app.get("/weather/current")
-async def get_current_weather(lat: Optional[float] = None, lon: Optional[float] = None, city: Optional[str] = None):
-    """Get current weather data using OpenWeather API"""
     try:
-        api_key = os.getenv("OPENWEATHER_API_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="OpenWeather API key not configured")
-
-        if lat and lon:
-            url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
-        elif city:
-            url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
-        else:
-            # Default to user's location from profile or Tamil Nadu center
-            url = f"https://api.openweathermap.org/data/2.5/weather?lat=11.1271&lon=78.6569&appid={api_key}&units=metric"
-
-        response = requests.get(url)
-        if not response.ok:
-            raise HTTPException(status_code=response.status_code, detail="Weather API error")
-
-        data = response.json()
-        return {
-            "temperature": round(data["main"]["temp"]),
-            "humidity": data["main"]["humidity"],
-            "description": data["weather"][0]["description"],
-            "wind_speed": data["wind"]["speed"],
-            "pressure": data["main"]["pressure"],
-            "feels_like": round(data["main"]["feels_like"]),
-            "icon": data["weather"][0]["icon"],
-            "location": data.get("name", "Unknown"),
-            "country": data.get("sys", {}).get("country", ""),
-            "timestamp": data["dt"]
-        }
-
+        initialize_ai_service()
+        print("✅ AI Service initialized")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"⚠️  AI Service warning: {e}")
+        print("   App will continue without AI model")
 
-# Soil Moisture API Endpoint
-@app.get("/soil/moisture")
-async def get_soil_moisture(polyid: str):
-    """Get soil moisture data from AgroMonitoring API"""
-    try:
-        api_key = os.getenv("AGROMONITORING_API_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="AgroMonitoring API key not configured")
-
-        url = f"https://api.agromonitoring.com/agro/1.0/soil?polyid={polyid}&appid={api_key}"
-        response = requests.get(url)
-        
-        if not response.ok:
-            raise HTTPException(status_code=response.status_code, detail="Soil API error")
-
-        data = response.json()
-        return {
-            "timestamp": data.get("dt"),
-            "temperature_10cm": kelvin_to_celsius(data.get("t10")),
-            "temperature_surface": kelvin_to_celsius(data.get("t0")),
-            "moisture": data.get("moisture"),
-            "unit": "m3/m3"
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-def kelvin_to_celsius(kelvin: float) -> float:
-    """Convert Kelvin to Celsius"""
-    return round(kelvin - 273.15, 2)
-
-# Agricultural News API Endpoint
-@app.get("/news/agriculture")
-async def get_agricultural_news(limit: int = 5):
-    """Get latest agricultural news from NewsAPI"""
-    try:
-        api_key = os.getenv("NEWS_API_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="News API key not configured")
-
-        # Search for agriculture, farming, crop related news
-        query = "agriculture OR farming OR crops OR weather OR soil OR irrigation OR pesticides OR harvest"
-        url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize={limit}&apiKey={api_key}"
-
-        response = requests.get(url)
-        if not response.ok:
-            raise HTTPException(status_code=response.status_code, detail="News API error")
-
-        data = response.json()
-        articles = []
-        
-        for article in data.get("articles", []):
-            articles.append({
-                "title": article.get("title"),
-                "description": article.get("description"),
-                "url": article.get("url"),
-                "imageUrl": article.get("urlToImage", ""),
-                "publishedAt": article.get("publishedAt"),
-                "source": article.get("source", {}).get("name", "News")
-            })
-
-        return {"articles": articles, "total": len(articles)}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# User location-based weather (from stored user profile)
-@app.get("/weather/user")
-async def get_user_weather(user_id: str):
-    """Get weather for user's farm location"""
-    try:
-        # Get user's farm location from database
-        farms_response = supabase.table("farms").select("*").eq("owner_id", user_id).execute()
-        
-        if not farms_response.data:
-            # Default to Tamil Nadu center
-            return await get_current_weather(lat=11.1271, lon=78.6569)
-        
-        # Use first farm's coordinates
-        farm = farms_response.data[0]
-        lat = farm.get("location_lat") or 11.1271
-        lng = farm.get("location_lng") or 78.6569
-        
-        return await get_current_weather(lat=lat, lon=lng)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    # Check if AI is loaded
+    ai_status = "loaded" if (detection_service and detection_service.model) else "not_loaded"
+    supabase_status = "connected" if supabase else "not_configured"
+    
+    return {
+        "status": "healthy",
+        "service": "AgroShield API",
+        "ai_loaded": ai_status,
+        "supabase": supabase_status,
+        "timestamp": int(__import__('time').time())
+    }
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    print(f"🚀 Starting AgroShield API on port {PORT}...")
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
