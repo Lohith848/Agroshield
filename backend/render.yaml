@@ -5,8 +5,9 @@ services:
     region: oregon
     plan: free
     buildCommand: |
-      apt-get update && apt-get install -y libgl1 libglib2.0-0
+      # Install Python dependencies
       pip install -r requirements.txt
+      # Download YOLOv8 model if not present
       if [ ! -f "models/yolov8n.pt" ]; then
         echo "Downloading YOLOv8 nano model..."
         mkdir -p models
