@@ -60,7 +60,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       // Request camera with optimal settings
       const constraints: MediaStreamConstraints = {
         video: { 
-          facingMode: 'environment',
           width: { ideal: 1280 },
           height: { ideal: 720 },
           facingMode: { ideal: 'environment' } // Prefer back camera
