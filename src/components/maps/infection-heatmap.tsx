@@ -4,21 +4,21 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Slider } from '@/components/ui/slider'
+import { Badge } from '@/components/ui/badge'
 import { 
   MapPin, 
-  Activity, 
-  AlertTriangle, 
-  TrendingUp,
-  Calendar,
-  Filter,
-  Download,
-  RefreshCw
+  Plus, 
+  Trash2, 
+  AlertTriangle,
+  Thermometer,
+  Droplets,
+  Leaf
 } from 'lucide-react'
 
-// Dynamically import Leaflet to avoid SSR issues
+// Dynamically import Leaflet
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
   { ssr: false }
@@ -27,8 +27,16 @@ const TileLayer = dynamic(
   () => import('react-leaflet').then((mod) => mod.TileLayer),
   { ssr: false }
 )
-const CircleMarker = dynamic(
-  () => import('react-leaflet').then((mod) => mod.CircleMarker),
+const Marker = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Marker),
+  { ssr: false }
+)
+const Circle = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Circle),
+  { ssr: false }
+)
+const Popup = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Popup),
   { ssr: false }
 )
 
@@ -36,11 +44,19 @@ interface ScanData {
   id: string
   farm_id: string
   disease_class: string
-  confidence: number
   severity: 'healthy' | 'mild' | 'moderate' | 'severe'
+  confidence: number
   gps_lat: number
   gps_lng: number
   created_at: string
+}
+
+interface ManualEntry {
+  lat: number
+  lng: number
+  disease: string
+  severity: 'healthy' | 'mild' | 'moderate' | 'severe'
+  confidence: number
 }
 
 interface InfectionHeatmapProps {
@@ -48,414 +64,417 @@ interface InfectionHeatmapProps {
   selectedFarmId?: string
 }
 
+const SEVERITY_COLORS = {
+  healthy: '#22c55e',   // green
+  mild: '#eab308',      // yellow
+  moderate: '#f97316',  // orange
+  severe: '#ef4444'     // red
+}
+
 export function InfectionHeatmap({ user, selectedFarmId }: InfectionHeatmapProps) {
   const [scanData, setScanData] = useState<ScanData[]>([])
-  const [filteredData, setFilteredData] = useState<ScanData[]>([])
-  const [selectedSeverity, setSelectedSeverity] = useState<string>('all')
-  const [selectedDisease, setSelectedDisease] = useState<string>('all')
-  const [dateRange, setDateRange] = useState<number>(7) // days
+  const [manualEntries, setManualEntries] = useState<ManualEntry[]>([])
+  const [showManualEntry, setShowManualEntry] = useState(false)
+  const [newEntry, setNewEntry] = useState<ManualEntry>({
+    lat: 11.1271,
+    lng: 78.6569,
+    disease: 'Early Blight',
+    severity: 'mild',
+    confidence: 85
+  })
   const [mapCenter, setMapCenter] = useState<[number, number]>([11.1271, 78.6569])
   const [mapZoom, setMapZoom] = useState(7)
-  const [isLoading, setIsLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  const severityColors = {
-    healthy: '#10b981',
-    mild: '#eab308',
-    moderate: '#f97316',
-    severe: '#ef4444'
-  }
-
-  const severityRadius = {
-    healthy: 8,
-    mild: 12,
-    moderate: 16,
-    severe: 20
-  }
-
-  const diseaseTypes = [
-    { value: 'all', label: 'All Diseases' },
-    { value: 'Tomato_Early_Blight', label: 'Tomato Early Blight' },
-    { value: 'Tomato_Late_Blight', label: 'Tomato Late Blight' },
-    { value: 'Chili_Leaf_Curl', label: 'Chili Leaf Curl' },
-    { value: 'Wheat_Rust', label: 'Wheat Rust' },
-    { value: 'Healthy', label: 'Healthy' }
+  const diseaseOptions = [
+    'Healthy',
+    'Early Blight',
+    'Late Blight',
+    'Leaf Curl',
+    'Leaf Spot',
+    'Powdery Mildew',
+    'Rust',
+    'Bacterial Spot',
+    'Mosaic Virus'
   ]
 
-  const severityOptions = [
-    { value: 'all', label: 'All Severities' },
-    { value: 'healthy', label: 'Healthy' },
-    { value: 'mild', label: 'Mild' },
-    { value: 'moderate', label: 'Moderate' },
-    { value: 'severe', label: 'Severe' }
-  ]
-
-  // Load scan data
+  // Load scan data from backend
   useEffect(() => {
-    loadScanData()
-  }, [selectedFarmId, dateRange])
-
-  // Filter data based on selections
-  useEffect(() => {
-    let filtered = scanData
-
-    if (selectedSeverity !== 'all') {
-      filtered = filtered.filter(scan => scan.severity === selectedSeverity)
-    }
-
-    if (selectedDisease !== 'all') {
-      filtered = filtered.filter(scan => scan.disease_class === selectedDisease)
-    }
-
-    setFilteredData(filtered)
-  }, [scanData, selectedSeverity, selectedDisease])
-
-  const loadScanData = async () => {
-    setIsLoading(true)
-    try {
-      // Mock data - replace with actual API call
-      const mockData: ScanData[] = [
-        {
-          id: '1',
-          farm_id: '1',
-          disease_class: 'Tomato_Early_Blight',
-          confidence: 0.85,
-          severity: 'moderate',
-          gps_lat: 11.0168,
-          gps_lng: 76.9558,
-          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: '2',
-          farm_id: '1',
-          disease_class: 'Healthy',
-          confidence: 0.92,
-          severity: 'healthy',
-          gps_lat: 11.0170,
-          gps_lng: 76.9560,
-          created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: '3',
-          farm_id: '2',
-          disease_class: 'Chili_Leaf_Curl',
-          confidence: 0.78,
-          severity: 'mild',
-          gps_lat: 10.7905,
-          gps_lng: 78.7047,
-          created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: '4',
-          farm_id: '2',
-          disease_class: 'Tomato_Late_Blight',
-          confidence: 0.91,
-          severity: 'severe',
-          gps_lat: 10.7910,
-          gps_lng: 78.7050,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '5',
-          farm_id: '1',
-          disease_class: 'Tomato_Early_Blight',
-          confidence: 0.88,
-          severity: 'moderate',
-          gps_lat: 11.0165,
-          gps_lng: 76.9555,
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+    const loadData = async () => {
+      setLoading(true)
+      try {
+        const farmId = selectedFarmId || '1'
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/heatmap/${farmId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setScanData(data.features?.map((f: any) => ({
+            id: f.properties?.scan_id || Math.random().toString(),
+            farm_id: farmId,
+            disease_class: f.properties?.disease || 'Unknown',
+            severity: f.properties?.severity || 'mild',
+            confidence: f.properties?.confidence || 0.5,
+            gps_lat: f.geometry?.coordinates[1] || 0,
+            gps_lng: f.geometry?.coordinates[0] || 0,
+            created_at: f.properties?.timestamp || new Date().toISOString()
+          })) || [])
         }
-      ]
+      } catch (error) {
+        console.error('Error loading heatmap data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
 
-      // Filter by date range
-      const cutoffDate = new Date(Date.now() - dateRange * 24 * 60 * 60 * 1000)
-      const filtered = mockData.filter(scan => new Date(scan.created_at) >= cutoffDate)
+    loadData()
+  }, [selectedFarmId])
 
-      setScanData(filtered)
-    } catch (error) {
-      console.error('Error loading scan data:', error)
-    } finally {
-      setIsLoading(false)
+  const handleAddManualEntry = () => {
+    setManualEntries(prev => [...prev, { ...newEntry }])
+    setShowManualEntry(false)
+    // Reset form
+    setNewEntry({
+      lat: mapCenter[0],
+      lng: mapCenter[1],
+      disease: 'Early Blight',
+      severity: 'mild',
+      confidence: 85
+    })
+  }
+
+  const handleMapClick = (lat: number, lng: number) => {
+    if (showManualEntry) {
+      setNewEntry(prev => ({ ...prev, lat, lng }))
+      setMapCenter([lat, lng])
+      setMapZoom(13)
     }
   }
 
-  const getStatistics = () => {
-    const stats = {
-      total: filteredData.length,
-      healthy: filteredData.filter(s => s.severity === 'healthy').length,
-      mild: filteredData.filter(s => s.severity === 'mild').length,
-      moderate: filteredData.filter(s => s.severity === 'moderate').length,
-      severe: filteredData.filter(s => s.severity === 'severe').length,
-      avgConfidence: filteredData.reduce((sum, s) => sum + s.confidence, 0) / filteredData.length || 0
-    }
-    return stats
+  const handleDeleteEntry = (index: number) => {
+    setManualEntries(prev => prev.filter((_, i) => i !== index))
   }
 
-  const stats = getStatistics()
+  // Combine scan data and manual entries for display
+  const allPoints = [
+    ...scanData.map(s => ({
+      key: `scan-${s.id}`,
+      position: [s.gps_lat, s.gps_lng] as [number, number],
+      disease: s.disease_class,
+      severity: s.severity,
+      confidence: s.confidence
+    })),
+    ...manualEntries.map((e, i) => ({
+      key: `manual-${i}`,
+      position: [e.lat, e.lng] as [number, number],
+      disease: e.disease,
+      severity: e.severity,
+      confidence: e.confidence
+    }))
+  ]
 
-  const exportHeatmapData = () => {
-    const csvContent = [
-      ['ID', 'Farm ID', 'Disease', 'Severity', 'Confidence', 'Latitude', 'Longitude', 'Date'],
-      ...filteredData.map(scan => [
-        scan.id,
-        scan.farm_id,
-        scan.disease_class,
-        scan.severity,
-        scan.confidence,
-        scan.gps_lat,
-        scan.gps_lng,
-        scan.created_at
-      ])
-    ].map(row => row.join(',')).join('\n')
+  const getRadius = (severity: string) => {
+    switch (severity) {
+      case 'severe': return 25
+      case 'moderate': return 20
+      case 'mild': return 15
+      default: return 10
+    }
+  }
 
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `infection-heatmap-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+  const getSeverityLabel = (severity: string) => {
+    return severity.charAt(0).toUpperCase() + severity.slice(1)
   }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Infection Heatmap</h1>
-          <p className="text-gray-600">Visualize disease outbreaks and infection patterns across your fields</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Disease Heatmap</h1>
+          <p className="text-gray-600">Visualize disease spread across your fields</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Map Section */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center">
-                    <Activity className="w-5 h-5 mr-2" />
-                    Disease Distribution Map
+                    <MapPin className="w-5 h-5 mr-2" />
+                    Infection Map
                   </CardTitle>
-                  <div className="flex space-x-2">
-                    <Button size="sm" variant="outline" onClick={loadScanData}>
-                      <RefreshCw className="w-4 h-4 mr-1" />
-                      Refresh
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={exportHeatmapData}>
-                      <Download className="w-4 h-4 mr-1" />
-                      Export
-                    </Button>
-                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowManualEntry(!showManualEntry)}
+                    variant={showManualEntry ? "default" : "outline"}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Data Point
+                  </Button>
                 </div>
                 <CardDescription>
-                  Real-time visualization of disease detection results
+                  {showManualEntry 
+                    ? 'Click on the map to place a disease detection point' 
+                    : 'Real-time disease detection heatmap'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Map Component */}
-                <div className="h-96 rounded-lg overflow-hidden border">
+                {/* Map */}
+                <div className="h-96 rounded-lg overflow-hidden border mb-4">
                   <MapContainer
                     center={mapCenter}
                     zoom={mapZoom}
                     style={{ height: '100%', width: '100%' }}
+                    onClick={(e: any) => {
+                      const { lat, lng } = e.latlng
+                      handleMapClick(lat, lng)
+                    }}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     />
-                    
-                    {/* Infection Markers */}
-                    {filteredData.map(scan => (
-                      <CircleMarker
-                        key={scan.id}
-                        center={[scan.gps_lat, scan.gps_lng]}
-                        radius={severityRadius[scan.severity]}
-                        fillColor={severityColors[scan.severity]}
-                        color={severityColors[scan.severity]}
-                        weight={2}
-                        fillOpacity={0.6}
-                      />
+
+                    {/* Disease Points */}
+                    {allPoints.map(point => (
+                      <Circle
+                        key={point.key}
+                        center={point.position}
+                        radius={getRadius(point.severity)}
+                        pathOptions={{
+                          color: SEVERITY_COLORS[point.severity],
+                          fillColor: SEVERITY_COLORS[point.severity],
+                          fillOpacity: 0.5
+                        }}
+                      >
+                        <Popup>
+                          <div>
+                            <h4 className="font-semibold">{point.disease}</h4>
+                            <p className="text-sm">Severity: {getSeverityLabel(point.severity)}</p>
+                            <p className="text-sm">Confidence: {(point.confidence * 100).toFixed(0)}%</p>
+                          </div>
+                        </Popup>
+                      </Circle>
                     ))}
+
+                    {/* Marker for manual entry preview */}
+                    {showManualEntry && newEntry.lat && newEntry.lng && (
+                      <Circle
+                        center={[newEntry.lat, newEntry.lng]}
+                        radius={15}
+                        pathOptions={{
+                          color: '#3b82f6',
+                          fillColor: '#3b82f6',
+                          fillOpacity: 0.4,
+                          dashArray: '5, 5'
+                        }}
+                      />
+                    )}
                   </MapContainer>
                 </div>
 
-                {/* Map Legend */}
-                <div className="mt-4 flex flex-wrap gap-4">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-                    <span className="text-sm">Healthy ({stats.healthy})</span>
+                {/* Manual Entry Form */}
+                {showManualEntry && (
+                  <div className="border rounded-lg p-4 bg-blue-50 mb-4">
+                    <h3 className="font-semibold mb-3 flex items-center">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Manual Data Point
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="disease">Disease Type</Label>
+                        <select
+                          id="disease"
+                          className="w-full mt-1 p-2 border rounded"
+                          value={newEntry.disease}
+                          onChange={(e) => setNewEntry({...newEntry, disease: e.target.value})}
+                        >
+                          {diseaseOptions.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="severity">Severity</Label>
+                        <select
+                          id="severity"
+                          className="w-full mt-1 p-2 border rounded"
+                          value={newEntry.severity}
+                          onChange={(e) => setNewEntry({...newEntry, severity: e.target.value as any})}
+                        >
+                          <option value="mild">Mild</option>
+                          <option value="moderate">Moderate</option>
+                          <option value="severe">Severe</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="confidence">Confidence (%)</Label>
+                        <Input
+                          id="confidence"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={newEntry.confidence}
+                          onChange={(e) => setNewEntry({...newEntry, confidence: parseFloat(e.target.value)})}
+                        />
+                      </div>
+                      <div>
+                        <Label>Coordinates</Label>
+                        <div className="text-sm text-gray-600 mt-1">
+                          {newEntry.lat.toFixed(6)}, {newEntry.lng.toFixed(6)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex space-x-2 mt-4">
+                      <Button size="sm" onClick={handleAddManualEntry}>
+                        Add Point
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setShowManualEntry(false)}>
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
-                    <span className="text-sm">Mild ({stats.mild})</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-orange-500 rounded-full"></div>
-                    <span className="text-sm">Moderate ({stats.moderate})</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-                    <span className="text-sm">Severe ({stats.severe})</span>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Filters and Statistics */}
+          {/* Legend & Stats */}
           <div className="space-y-6">
-            {/* Filters */}
+            {/* Legend */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Filter className="w-5 h-5 mr-2" />
-                  Filters
+                <CardTitle className="text-lg">Legend</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {Object.entries(SEVERITY_COLORS).map(([severity, color]) => (
+                  <div key={severity} className="flex items-center space-x-3">
+                    <div 
+                      className="w-4 h-4 rounded-full"
+                      style={{ backgroundColor: color }}
+                    ></div>
+                    <span className="text-sm capitalize">{severity}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Data Points List */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="text-lg">Detection Points</span>
+                  <Badge>{allPoints.length}</Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Disease Type</label>
-                  <Select value={selectedDisease} onValueChange={setSelectedDisease}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {diseaseTypes.map(disease => (
-                        <SelectItem key={disease.value} value={disease.value}>
-                          {disease.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <CardContent>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {allPoints.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      No detection data yet. Click "Add Data Point" to start.
+                    </p>
+                  ) : (
+                    [...allPoints].reverse().map((point, index) => (
+                      <div 
+                        key={point.key} 
+                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <div 
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: SEVERITY_COLORS[point.severity] }}
+                            ></div>
+                            <span className="font-medium text-sm">{point.disease}</span>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {point.position[0].toFixed(4)}, {point.position[1].toFixed(4)}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Badge variant="outline" className="capitalize">
+                            {point.severity}
+                          </Badge>
+                          {point.key.startsWith('manual-') && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-red-500"
+                              onClick={() => handleDeleteEntry(parseInt(point.key.split('-')[1]))}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Severity</label>
-                  <Select value={selectedSeverity} onValueChange={setSelectedSeverity}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {severityOptions.map(severity => (
-                        <SelectItem key={severity.value} value={severity.value}>
-                          {severity.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Time Range: {dateRange} days
-                  </label>
-                  <Slider
-                    value={[dateRange]}
-                    onValueChange={(value: number[]) => setDateRange(value[0])}
-                    max={30}
-                    min={1}
-                    step={1}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>1 day</span>
-                    <span>30 days</span>
-                  </div>
-                </div>
+                {manualEntries.length > 0 && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full mt-4"
+                    onClick={() => {
+                      // Could save to backend here
+                      alert('Manual entries would be saved to database')
+                    }}
+                  >
+                    Save All Entries
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
             {/* Statistics */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center">
-                  <TrendingUp className="w-5 h-5 mr-2" />
-                  Statistics
+                <CardTitle className="text-lg flex items-center">
+                  <Thermometer className="w-5 h-5 mr-2" />
+                  Area Statistics
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-                    <div className="text-sm text-gray-600">Total Scans</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-red-50 rounded-lg">
+                    <p className="text-xl font-bold text-red-600">
+                      {allPoints.filter(p => p.severity === 'severe').length}
+                    </p>
+                    <p className="text-xs text-gray-600">Severe</p>
                   </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      {(stats.avgConfidence * 100).toFixed(1)}%
-                    </div>
-                    <div className="text-sm text-gray-600">Avg Confidence</div>
+                  <div className="p-3 bg-orange-50 rounded-lg">
+                    <p className="text-xl font-bold text-orange-600">
+                      {allPoints.filter(p => p.severity === 'moderate').length}
+                    </p>
+                    <p className="text-xs text-gray-600">Moderate</p>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Healthy</span>
-                    <Badge className="bg-green-100 text-green-800">
-                      {stats.healthy}
-                    </Badge>
+                  <div className="p-3 bg-yellow-50 rounded-lg">
+                    <p className="text-xl font-bold text-yellow-600">
+                      {allPoints.filter(p => p.severity === 'mild').length}
+                    </p>
+                    <p className="text-xs text-gray-600">Mild</p>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Mild</span>
-                    <Badge className="bg-yellow-100 text-yellow-800">
-                      {stats.mild}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Moderate</span>
-                    <Badge className="bg-orange-100 text-orange-800">
-                      {stats.moderate}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">Severe</span>
-                    <Badge className="bg-red-100 text-red-800">
-                      {stats.severe}
-                    </Badge>
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <p className="text-xl font-bold text-green-600">
+                      {allPoints.filter(p => p.severity === 'healthy').length}
+                    </p>
+                    <p className="text-xs text-gray-600">Healthy</p>
                   </div>
                 </div>
 
-                <div className="p-3 bg-blue-50 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm text-blue-800">
-                      {stats.severe > 0 ? `${stats.severe} severe cases need immediate attention` : 'No severe cases detected'}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="w-5 h-5 mr-2" />
-                  Recent Detections
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {filteredData.slice(0, 5).map(scan => (
-                    <div key={scan.id} className="flex items-center justify-between p-2 border rounded">
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">
-                          {scan.disease_class.replace('_', ' ')}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {new Date(scan.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <Badge 
-                        className={`${
-                          scan.severity === 'healthy' ? 'bg-green-100 text-green-800' :
-                          scan.severity === 'mild' ? 'bg-yellow-100 text-yellow-800' :
-                          scan.severity === 'moderate' ? 'bg-orange-100 text-orange-800' :
-                          'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {scan.severity}
+                {allPoints.length > 0 && (
+                  <div className="pt-3 border-t">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Risk Level</span>
+                      <Badge variant={
+                        allPoints.some(p => p.severity === 'severe') ? 'destructive' :
+                        allPoints.some(p => p.severity === 'moderate') ? 'secondary' : 'outline'
+                      }>
+                        {allPoints.some(p => p.severity === 'severe') ? 'High' :
+                         allPoints.some(p => p.severity === 'moderate') ? 'Medium' : 'Low'}
                       </Badge>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

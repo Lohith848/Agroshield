@@ -20,6 +20,7 @@ import {
 interface CameraScanProps {
   user: any
   onScanComplete: (result: any) => void
+  onClose?: () => void
 }
 
 export function CameraScan({ user, onScanComplete }: CameraScanProps) {
@@ -40,21 +41,43 @@ export function CameraScan({ user, onScanComplete }: CameraScanProps) {
     { id: '3', name: 'Mixed Crop Field C', crop: 'Mixed', area: '3.2 acres' }
   ]
 
+  // Start camera on component mount
+  useEffect(() => {
+    startCamera()
+    
+    return () => {
+      stopCamera()
+    }
+  }, [])
+
   const startCamera = async () => {
     try {
+      // Stop any existing stream first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
       })
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         streamRef.current = stream
+        // Wait for video to be ready
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play()
+        }
       }
       
       setIsScanning(true)
     } catch (error) {
       console.error('Error accessing camera:', error)
-      alert('Unable to access camera. Please check permissions.')
+      alert('Unable to access camera. Please check permissions and ensure you are using HTTPS or localhost.')
     }
   }
 
@@ -175,199 +198,219 @@ export function CameraScan({ user, onScanComplete }: CameraScanProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Crop Disease Scan</h1>
-          <p className="text-gray-600">Capture and analyze crop health with AI-powered detection</p>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      {/* Header */}
+      <div className="bg-gray-900 text-white p-4 flex items-center justify-between">
+        <div className="flex items-center">
+          <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center mr-3">
+            <span className="text-white font-bold text-xs">AS</span>
+          </div>
+          <h2 className="text-lg font-semibold">Crop Disease Scan</h2>
         </div>
+        {onClose && (
+          <Button variant="ghost" size="sm" onClick={onClose} className="text-white hover:bg-gray-800">
+            <X className="w-5 h-5" />
+            Close
+          </Button>
+        )}
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Camera/Upload Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Camera className="w-5 h-5 mr-2" />
-                {capturedImage ? 'Review Image' : 'Capture Image'}
-              </CardTitle>
-              <CardDescription>
-                {capturedImage ? 'Review and confirm the scan details' : 'Take a clear photo of the affected plant area'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!capturedImage ? (
-                <>
-                  {!isScanning ? (
-                    <div className="space-y-4">
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                        <Camera className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600 mb-4">Click below to start camera</p>
-                        <Button onClick={startCamera} className="bg-green-600 hover:bg-green-700">
-                          <Camera className="w-4 h-4 mr-2" />
-                          Start Camera
-                        </Button>
-                      </div>
-                      
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500">or</p>
-                        <Button variant="outline" className="mt-2">
-                          <Upload className="w-4 h-4 mr-2" />
-                          Upload from Gallery
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        className="w-full rounded-lg"
-                      />
-                      <canvas ref={canvasRef} className="hidden" />
-                      
-                      <div className="flex space-x-3">
-                        <Button onClick={capturePhoto} className="flex-1 bg-green-600 hover:bg-green-700">
-                          <Camera className="w-4 h-4 mr-2" />
-                          Capture Photo
-                        </Button>
-                        <Button onClick={stopCamera} variant="outline">
-                          <X className="w-4 h-4 mr-2" />
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
+      <div className="flex-1 relative flex flex-col">
+        {!capturedImage ? (
+          <>
+            {/* Camera Preview */}
+            <div className="flex-1 relative bg-gray-900">
+              {isScanning ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
               ) : (
-                <div className="space-y-4">
-                  <img 
-                    src={capturedImage} 
-                    alt="Captured scan" 
-                    className="w-full rounded-lg"
-                  />
-                  
-                  <div className="flex space-x-3">
-                    <Button onClick={retakePhoto} variant="outline">
-                      <RotateCcw className="w-4 h-4 mr-2" />
-                      Retake
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="text-center text-white">
+                    <Camera className="w-16 h-16 mx-auto mb-4 text-gray-500" />
+                    <p className="text-lg">Camera is starting...</p>
+                    <Button 
+                      onClick={startCamera} 
+                      className="mt-4 bg-green-600 hover:bg-green-700"
+                    >
+                      Start Camera
                     </Button>
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Scan Details & Results */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Leaf className="w-5 h-5 mr-2" />
-                Scan Details
-              </CardTitle>
-              <CardDescription>
-                Configure scan parameters and view results
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Farm Selection */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Select Farm</label>
-                <Select value={selectedFarm} onValueChange={setSelectedFarm}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a farm" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {farms.map((farm) => (
-                      <SelectItem key={farm.id} value={farm.id}>
-                        <div>
-                          <div className="font-medium">{farm.name}</div>
-                          <div className="text-sm text-gray-500">{farm.crop} • {farm.area}</div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Capture Button Overlay */}
+              {isScanning && (
+                <div className="absolute bottom-8 left-0 right-0 flex justify-center">
+                  <div className="flex items-center space-x-6">
+                    {/* Gallery Upload Placeholder */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-white hover:bg-gray-800 rounded-full"
+                      onClick={() => {
+                        // Future: implement gallery upload
+                        alert('Gallery upload coming soon! Use camera to capture.')
+                      }}
+                    >
+                      <Upload className="w-6 h-6" />
+                    </Button>
 
-              {/* GPS Location */}
-              {gpsLocation && (
+                    {/* Capture Button */}
+                    <button
+                      onClick={capturePhoto}
+                      className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-white bg-opacity-20 hover:bg-opacity-30 transition-all"
+                    >
+                      <div className="w-16 h-16 rounded-full bg-white"></div>
+                    </button>
+
+                    {/* Toggle Camera (Front/Back) */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-white hover:bg-gray-800 rounded-full"
+                      onClick={() => {
+                        // Future: toggle camera
+                        alert('Camera toggle coming soon!')
+                      }}
+                    >
+                      <RotateCcw className="w-6 h-6" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Top overlay info */}
+              {isScanning && (
+                <div className="absolute top-4 left-4 right-4">
+                  <div className="bg-black bg-opacity-50 rounded-lg p-3 text-white text-sm">
+                    <p>Position crop in frame • Tap capture button when ready</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Farm Selection & Controls */}
+            <div className="bg-gray-100 p-4 border-t">
+              <div className="max-w-md mx-auto space-y-4">
+                {/* Farm Selector */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium flex items-center">
-                    <MapPin className="w-4 h-4 mr-1" />
-                    GPS Location
-                  </label>
-                  <div className="text-sm text-gray-600">
-                    {gpsLocation.lat.toFixed(6)}, {gpsLocation.lng.toFixed(6)}
-                  </div>
+                  <label className="text-sm font-medium text-gray-700">Select Field</label>
+                  <Select value={selectedFarm} onValueChange={setSelectedFarm}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a field" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {farms.map((farm) => (
+                        <SelectItem key={farm.id} value={farm.id}>
+                          <div>
+                            <div className="font-medium">{farm.name}</div>
+                            <div className="text-sm text-gray-500">{farm.crop} • {farm.area}</div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Cancel Button */}
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={() => {
+                      stopCamera()
+                      if (onClose) onClose()
+                    }}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Captured Image Preview */}
+            <div className="flex-1 relative bg-black flex items-center justify-center">
+              <img 
+                src={capturedImage} 
+                alt="Captured scan" 
+                className="max-w-full max-h-full object-contain"
+              />
+              
+              {/* Location Badge */}
+              {gpsLocation && (
+                <div className="absolute top-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-full text-sm flex items-center">
+                  <MapPin className="w-4 h-4 mr-1" />
+                  {gpsLocation.lat.toFixed(4)}, {gpsLocation.lng.toFixed(4)}
                 </div>
               )}
+            </div>
 
-              {/* Scan Results */}
-              {scanResult ? (
-                <div className="space-y-4">
-                  <div className="border rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-medium">Detection Results</h3>
-                      {getDiseaseIcon(scanResult.result.disease_class)}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Disease:</span>
-                        <span className="text-sm font-medium">{scanResult.result.disease_class.replace('_', ' ')}</span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Confidence:</span>
-                        <span className="text-sm font-medium">{(scanResult.result.confidence * 100).toFixed(1)}%</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Severity:</span>
-                        <Badge className={getSeverityColor(scanResult.result.severity)}>
-                          {scanResult.result.severity}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <p className="text-sm text-green-800">
-                      ✅ Scan completed successfully! Results have been saved to your farm records.
-                    </p>
-                  </div>
+            {/* Bottom Controls */}
+            <div className="bg-gray-100 p-4 border-t">
+              <div className="max-w-md mx-auto space-y-4">
+                {/* Farm Selector (passed to upload) */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Select Field</label>
+                  <Select value={selectedFarm} onValueChange={setSelectedFarm}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a field" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {farms.map((farm) => (
+                        <SelectItem key={farm.id} value={farm.id}>
+                          <div>
+                            <div className="font-medium">{farm.name}</div>
+                            <div className="text-sm text-gray-500">{farm.crop} • {farm.area}</div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Leaf className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">Results will appear here after scanning</p>
-                </div>
-              )}
 
-              {/* Upload Button */}
-              {capturedImage && !scanResult && (
-                <Button 
-                  onClick={uploadScan} 
-                  disabled={!selectedFarm || isUploading}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Leaf className="w-4 h-4 mr-2" />
-                      Analyze with AI
-                    </>
-                  )}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                {/* Action Buttons */}
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={retakePhoto}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Retake
+                  </Button>
+                  <Button
+                    onClick={uploadScan}
+                    disabled={!selectedFarm || isUploading}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Leaf className="w-4 h-4 mr-2" />
+                        Analyze & Save
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Canvas (hidden, for image processing) */}
+        <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
   )
