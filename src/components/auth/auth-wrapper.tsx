@@ -16,8 +16,17 @@ export function AuthWrapper({ user, onUserChange }: AuthWrapperProps) {
   useEffect(() => {
     // Check if Supabase environment variables are available
     const checkSupabase = () => {
-      const hasEnvVars = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && 
-                        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      
+      // Debug logging for production
+      console.log('Environment Check:', {
+        supabaseUrl: supabaseUrl ? 'SET' : 'MISSING',
+        supabaseKey: supabaseKey ? 'SET' : 'MISSING',
+        isProduction: process.env.NODE_ENV
+      })
+      
+      const hasEnvVars = !!(supabaseUrl && supabaseKey)
       
       setSupabaseReady(hasEnvVars)
       setLoading(false)

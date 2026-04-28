@@ -60,16 +60,34 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
+      console.log('Sending OTP to:', `+91${formData.phone}`)
+      
       const { error } = await supabase.auth.signInWithOtp({
         phone: `+91${formData.phone}`,
       })
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase OTP Error:', error)
+        throw error
+      }
 
+      console.log('OTP sent successfully')
       setOtpSent(true)
     } catch (error) {
       console.error('Error sending OTP:', error)
-      alert('Failed to send OTP. Please try again.')
+      
+      // More specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('Invalid phone number')) {
+          alert('Invalid phone number format. Please check your number.')
+        } else if (error.message.includes('rate limit')) {
+          alert('Too many requests. Please wait before trying again.')
+        } else {
+          alert(`Failed to send OTP: ${error.message}`)
+        }
+      } else {
+        alert('Failed to send OTP. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
