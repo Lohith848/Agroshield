@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,11 +31,12 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
   const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  // Mock farms data - in real app this would come from database
+  // Mock farms data
   const farms = [
     { id: '1', name: 'Tomato Field A', crop: 'Tomato', area: '2.5 acres' },
     { id: '2', name: 'Chili Field B', crop: 'Chili', area: '1.8 acres' },
@@ -53,17 +54,15 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
 
   const startCamera = async () => {
     try {
-      // Stop any existing stream first
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
 
-      // Request camera with optimal settings
       const constraints: MediaStreamConstraints = {
         video: { 
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          facingMode: { ideal: 'environment' } // Prefer back camera
+          facingMode: { ideal: 'environment' }
         },
         audio: false
       }
@@ -73,11 +72,9 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         streamRef.current = stream
-        // Wait for video to be ready and play
         videoRef.current.onloadedmetadata = () => {
           videoRef.current?.play().catch(err => {
             console.error('Video play error:', err)
-            alert('Camera preview failed. Please check permissions.')
           })
         }
       }
@@ -87,11 +84,9 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       console.error('Error accessing camera:', error)
       let message = 'Unable to access camera. '
       if (error.name === 'NotAllowedError') {
-        message += 'Please allow camera permissions and try again.'
+        message += 'Please allow camera permissions.'
       } else if (error.name === 'NotFoundError') {
-        message += 'No camera found on this device.'
-      } else if (error.name === 'NotReadableError') {
-        message += 'Camera is in use by another application.'
+        message += 'No camera found.'
       } else {
         message += error.message || 'Please check permissions.'
       }
@@ -140,7 +135,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
         },
         (error) => {
           console.error('Error getting location:', error)
-          // Continue without GPS
         }
       )
     }
@@ -164,12 +158,10 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     setAnalysisError(null)
 
     try {
-      // Convert base64 to blob
       const response = await fetch(capturedImage)
       const blob = await response.blob()
       const file = new File([blob], 'scan.jpg', { type: 'image/jpeg' })
 
-      // Create form data for Groq endpoint
       const formData = new FormData()
       formData.append('file', file)
       formData.append('user_id', user.id)
@@ -179,8 +171,8 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
         formData.append('gps_lng', gpsLocation.lng.toString())
       }
 
-      // Upload to Groq AI backend
-      const uploadResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scan/analyze-groq`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const uploadResponse = await fetch(`${apiUrl}/scan/analyze-groq`, {
         method: 'POST',
         body: formData
       })
@@ -191,8 +183,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       }
 
       const result = await uploadResponse.json()
-      
-      // Handle Groq result format
       const analysis = result.result || result
       
       setScanResult({
@@ -202,7 +192,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
         scan_id: result.scan_id
       })
       
-      // Notify parent
       onScanComplete({ result: analysis, image_url: result.image_url })
 
     } catch (error) {
@@ -211,23 +200,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     } finally {
       setIsUploading(false)
     }
-  }
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'healthy': return 'bg-green-100 text-green-800'
-      case 'mild': return 'bg-yellow-100 text-yellow-800'
-      case 'moderate': return 'bg-orange-100 text-orange-800'
-      case 'severe': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getDiseaseIcon = (disease: string) => {
-    if (disease === 'Healthy' || disease === 'healthy') {
-      return <CheckCircle className="w-5 h-5 text-green-600" />
-    }
-    return <AlertTriangle className="w-5 h-5 text-orange-600" />
   }
 
   return (
@@ -281,19 +253,15 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
               {isScanning && (
                 <div className="absolute bottom-8 left-0 right-0 flex justify-center px-4">
                   <div className="flex items-center space-x-6">
-                    {/* Gallery Upload Placeholder */}
                     <Button
                       variant="ghost"
                       size="icon"
                       className="text-white hover:bg-gray-800 rounded-full flex-shrink-0"
-                      onClick={() => {
-                        alert('Gallery upload coming soon! Use camera to capture.')
-                      }}
+                      onClick={() => alert('Gallery upload coming soon!')}
                     >
                       <Upload className="w-6 h-6" />
                     </Button>
 
-                    {/* Capture Button */}
                     <button
                       onClick={capturePhoto}
                       className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-white bg-opacity-20 hover:bg-opacity-30 transition-all flex-shrink-0"
@@ -301,14 +269,11 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                       <div className="w-16 h-16 rounded-full bg-white"></div>
                     </button>
 
-                    {/* Toggle Camera (Front/Back) */}
                     <Button
                       variant="ghost"
                       size="icon"
                       className="text-white hover:bg-gray-800 rounded-full flex-shrink-0"
-                      onClick={() => {
-                        alert('Camera toggle coming soon!')
-                      }}
+                      onClick={() => alert('Camera toggle coming soon!')}
                     >
                       <RotateCcw className="w-6 h-6" />
                     </Button>
@@ -349,23 +314,46 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                   </Select>
                 </div>
 
-                {/* Cancel Button */}
+                {/* Error Message */}
+                {analysisError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-800">{analysisError}</p>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
                 <div className="flex space-x-3">
                   <Button
-                    onClick={() => {
-                      stopCamera()
-                      if (onClose) onClose()
-                    }}
+                    onClick={retakePhoto}
                     variant="outline"
                     className="flex-1"
                   >
-                    <X className="w-4 h-4 mr-2" />
-                    Cancel
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Retake
+                  </Button>
+                  <Button
+                    onClick={uploadScan}
+                    disabled={!selectedFarm || isUploading}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Leaf className="w-4 h-4 mr-2" />
+                        Analyze & Save
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
             </div>
           </>
+        ) : (
+          <>
             {!scanResult ? (
               <>
                 {/* Captured Image Preview */}
@@ -447,17 +435,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                 </div>
               </>
             ) : (
-                          <>
-                            <Leaf className="w-4 h-4 mr-2" />
-                            Analyze & Save
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
               <>
                 {/* Analysis Results */}
                 <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
@@ -490,7 +467,7 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                         <div>
                           <label className="text-xs text-gray-500 uppercase">Disease Detected</label>
                           <p className="text-lg font-semibold capitalize">
-                            {scanResult.result.disease_class.replace('_', ' ')}
+                            {scanResult.result.disease_class?.replace('_', ' ') || 'Unknown'}
                           </p>
                         </div>
 
@@ -503,13 +480,13 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                           <div>
                             <label className="text-xs text-gray-500 uppercase">Confidence</label>
                             <p className="text-2xl font-bold text-green-600">
-                              {(scanResult.result.confidence * 100).toFixed(1)}%
+                              {((scanResult.result.confidence || 0) * 100).toFixed(1)}%
                             </p>
                           </div>
                           <div className="text-right">
                             <label className="text-xs text-gray-500 uppercase">Severity</label>
                             <p className="text-lg font-semibold capitalize">
-                              {scanResult.result.severity}
+                              {scanResult.result.severity || 'Unknown'}
                             </p>
                           </div>
                         </div>
@@ -565,7 +542,6 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                   <div className="max-w-md mx-auto">
                     <Button 
                       onClick={() => {
-                        setShowCameraScan(false)
                         if (onClose) onClose()
                       }}
                       className="w-full bg-green-600 hover:bg-green-700"
