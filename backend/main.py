@@ -621,21 +621,19 @@ Respond in JSON format:
                 "description": content[:200]
             }
         
-        # Upload image to Supabase Storage
-        file_path = f"scans/{user_id}/{farm_id}/{file.filename}"
-        
+        # Upload image to Supabase Storage (optional)
+        image_url = None
         try:
+            file_path = f"scans/{user_id}/{farm_id}/{file.filename}"
             storage_response = supabase.storage.from_("scan-images").upload(
                 file_path, image_bytes
             )
             
             if storage_response:
                 image_url = supabase.storage.from_("scan-images").get_public_url(file_path)
-            else:
-                image_url = None
         except Exception as storage_error:
             print(f"Storage error: {storage_error}")
-            image_url = None
+            # Continue without storage
         
         # Save scan result to database
         scan_data = {
