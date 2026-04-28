@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import base64
+import json
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import uvicorn
@@ -394,30 +396,273 @@ async def get_disease_information(disease_class: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
+# Weather API Endpoint
+@app.get("/weather/current")
+async def get_current_weather(lat: Optional[float] = None, lon: Optional[float] = None, city: Optional[str] = None):
+    """Get current weather data using OpenWeather API"""
     try:
-        initialize_ai_service()
-        print("✅ AI Service initialized")
-    except Exception as e:
-        print(f"⚠️  AI Service warning: {e}")
-        print("   App will continue without AI model")
+        api_key = os.getenv("OPENWEATHER_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="OpenWeather API key not configured")
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for monitoring"""
-    # Check if AI is loaded
-    ai_status = "loaded" if (detection_service and detection_service.model) else "not_loaded"
-    supabase_status = "connected" if supabase else "not_configured"
-    
-    return {
-        "status": "healthy",
-        "service": "AgroShield API",
-        "ai_loaded": ai_status,
-        "supabase": supabase_status,
-        "timestamp": int(__import__('time').time())
-    }
+        if lat and lon:
+            url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
+        elif city:
+            url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
+        else:
+            # Default to user's location from profile or Tamil Nadu center
+            url = f"https://api.openweathermap.org/data/2.5/weather?lat=11.1271&lon=78.6569&appid={api_key}&units=metric"
+
+        response = requests.get(url)
+        if not response.ok:
+            raise HTTPException(status_code=response.status_code, detail="Weather API error")
+
+        data = response.json()
+        return {
+            "temperature": round(data["main"]["temp"]),
+            "humidity": data["main"]["humidity"],
+            "description": data["weather"][0]["description"],
+            "wind_speed": data["wind"]["speed"],
+            "pressure": data["main"]["pressure"],
+            "feels_like": round(data["main"]["feels_like"]),
+            "icon": data["weather"][0]["icon"],
+            "location": data.get("name", "Unknown"),
+            "country": data.get("sys", {}).get("country", ""),
+            "timestamp": data["dt"]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Soil Moisture API Endpoint
+@app.get("/soil/moisture")
+async def get_soil_moisture(polyid: str):
+    """Get soil moisture data from AgroMonitoring API"""
+    try:
+        api_key = os.getenv("AGROMONITORING_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="AgroMonitoring API key not configured")
+
+        url = f"https://api.agromonitoring.com/agro/1.0/soil?polyid={polyid}&appid={api_key}"
+        response = requests.get(url)
+        
+        if not response.ok:
+            raise HTTPException(status_code=response.status_code, detail="Soil API error")
+
+        data = response.json()
+        return {
+            "timestamp": data.get("dt"),
+            "temperature_10cm": kelvin_to_celsius(data.get("t10")),
+            "temperature_surface": kelvin_to_celsius(data.get("t0")),
+            "moisture": data.get("moisture"),
+            "unit": "m3/m3"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def kelvin_to_celsius(kelvin: float) -> float:
+    """Convert Kelvin to Celsius"""
+    return round(kelvin - 273.15, 2)
+
+# Agricultural News API Endpoint
+@app.get("/news/agriculture")
+async def get_agricultural_news(limit: int = 5):
+    """Get latest agricultural news from NewsAPI"""
+    try:
+        api_key = os.getenv("NEWS_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="News API key not configured")
+
+        # Search for agriculture, farming, crop related news
+        query = "agriculture OR farming OR crops OR weather OR soil OR irrigation OR pesticides OR harvest"
+        url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize={limit}&apiKey={api_key}"
+
+        response = requests.get(url)
+        if not response.ok:
+            raise HTTPException(status_code=response.status_code, detail="News API error")
+
+        data = response.json()
+        articles = []
+        
+        for article in data.get("articles", []):
+            articles.append({
+                "title": article.get("title"),
+                "description": article.get("description"),
+                "url": article.get("url"),
+                "imageUrl": article.get("urlToImage", ""),
+                "publishedAt": article.get("publishedAt"),
+                "source": article.get("source", {}).get("name", "News")
+            })
+
+        return {"articles": articles, "total": len(articles)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# User location-based weather (from stored user profile)
+@app.get("/weather/user")
+async def get_user_weather(user_id: str):
+    """Get weather for user's farm location"""
+    try:
+        # Get user's farm location from database
+        farms_response = supabase.table("farms").select("*").eq("owner_id", user_id).execute()
+        
+        if not farms_response.data:
+            # Default to Tamil Nadu center
+            return await get_current_weather(lat=11.1271, lon=78.6569)
+        
+        # Use first farm's coordinates
+        farm = farms_response.data[0]
+        lat = farm.get("location_lat") or 11.1271
+        lng = farm.get("location_lng") or 78.6569
+        
+        return await get_current_weather(lat=lat, lon=lng)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/scan/analyze-groq")
+async def analyze_scan_groq(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    farm_id: str = Form(...),
+    gps_lat: float = Form(0.0),
+    gps_lng: float = Form(0.0)
+):
+    """Analyze crop image using Groq AI (vision model)"""
+    try:
+        # Read image
+        image_bytes = await file.read()
+        
+        # Convert to base64
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        
+        # Get Groq API key
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            raise HTTPException(status_code=500, detail="Groq API key not configured")
+        
+        # Prepare Groq API request (using Llama 3.2 90B Vision)
+        groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        
+        prompt = """Analyze this crop image and identify:
+1. Plant type (e.g., tomato, chili, wheat, rice, cotton, sugarcane, maize)
+2. Disease or pest infestation (if any)
+3. Severity level (healthy, mild, moderate, severe)
+4. Specific disease name (e.g., Early Blight, Late Blight, Leaf Curl, Powdery Mildew, Rust)
+5. Confidence score (0-1)
+
+Respond in JSON format:
+{
+  "disease_class": "disease_name_or_Healthy",
+  "confidence": 0.95,
+  "severity": "healthy|mild|moderate|severe",
+  "plant_type": "crop_name",
+  "description": "brief description of findings"
+}"""
+        
+        payload = {
+            "model": "meta-llama/llama-3.2-90b-vision-preview",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 500,
+            "temperature": 0.3,
+            "top_p": 0.9
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {groq_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(groq_url, json=payload, headers=headers, timeout=30)
+        
+        if not response.ok:
+            error_detail = response.json().get("error", {}).get("message", "Unknown error")
+            raise HTTPException(status_code=response.status_code, detail=f"Groq API error: {error_detail}")
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # Parse JSON from response
+        try:
+            # Extract JSON from the content (it might be wrapped in markdown)
+            json_start = content.find('{')
+            json_end = content.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                json_str = content[json_start:json_end]
+                analysis = json.loads(json_str)
+            else:
+                # Fallback: try to parse entire content
+                analysis = json.loads(content)
+        except json.JSONDecodeError:
+            # If not JSON, create a fallback result
+            analysis = {
+                "disease_class": "Unknown",
+                "confidence": 0.5,
+                "severity": "moderate",
+                "plant_type": "Unknown",
+                "description": content[:200]
+            }
+        
+        # Upload image to Supabase Storage
+        file_path = f"scans/{user_id}/{farm_id}/{file.filename}"
+        
+        try:
+            storage_response = supabase.storage.from_("scan-images").upload(
+                file_path, image_bytes
+            )
+            
+            if storage_response:
+                image_url = supabase.storage.from_("scan-images").get_public_url(file_path)
+            else:
+                image_url = None
+        except Exception as storage_error:
+            print(f"Storage error: {storage_error}")
+            image_url = None
+        
+        # Save scan result to database
+        scan_data = {
+            "user_id": user_id,
+            "farm_id": farm_id,
+            "image_url": image_url or "",
+            "disease_class": analysis.get("disease_class", "Unknown"),
+            "confidence": analysis.get("confidence", 0.5),
+            "severity": analysis.get("severity", "moderate"),
+            "gps_lat": gps_lat,
+            "gps_lng": gps_lng,
+            "ai_model_version": "groq-llama-3.2-90b-vision",
+            "analysis_description": analysis.get("description", "")
+        }
+        
+        db_response = supabase.table("scans").insert(scan_data).execute()
+        
+        return {
+            "scan_id": db_response.data[0]["id"] if db_response.data else None,
+            "result": analysis,
+            "image_url": image_url,
+            "disease_info": detection_service.get_disease_info(analysis.get("disease_class", "Unknown"))
+        }
+        
+    except Exception as e:
+        print(f"Groq analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
