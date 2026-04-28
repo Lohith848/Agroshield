@@ -30,11 +30,27 @@ export function AuthWrapper({ user, onUserChange }: AuthWrapperProps) {
       const hasEnvVars = !!(supabaseUrl && supabaseKey)
       
       setSupabaseReady(hasEnvVars)
+      
+      // Check for persistent session
+      if (hasEnvVars && typeof window !== 'undefined') {
+        const savedUser = localStorage.getItem('agroshield_user')
+        if (savedUser) {
+          try {
+            const userData = JSON.parse(savedUser)
+            console.log('🔓 Found persistent session:', userData.email)
+            onUserChange(userData)
+          } catch (error) {
+            console.error('Failed to parse saved user data:', error)
+            localStorage.removeItem('agroshield_user')
+          }
+        }
+      }
+      
       setLoading(false)
     }
 
     checkSupabase()
-  }, [])
+  }, [onUserChange])
 
   if (loading) {
     return (
@@ -72,7 +88,17 @@ export function AuthWrapper({ user, onUserChange }: AuthWrapperProps) {
   }
 
   if (user) {
-    return <Dashboard user={user} />
+    const handleLogout = () => {
+      // Clear localStorage session
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('agroshield_user')
+        console.log('🔒 Session cleared')
+      }
+      // Clear user state
+      onUserChange(null)
+    }
+    
+    return <Dashboard user={user} onLogout={handleLogout} />
   }
 
   return <AuthFormEmail onSuccess={onUserChange} />

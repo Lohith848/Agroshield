@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { LogOut, User } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -27,9 +28,10 @@ import { InfectionHeatmap } from '@/components/maps/infection-heatmap'
 
 interface DashboardProps {
   user: any
+  onLogout?: () => void
 }
 
-export function Dashboard({ user }: DashboardProps) {
+export function Dashboard({ user, onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showCameraScan, setShowCameraScan] = useState(false)
   const [selectedFarmId, setSelectedFarmId] = useState<string>('')
@@ -44,6 +46,22 @@ export function Dashboard({ user }: DashboardProps) {
   const handleFieldSaved = (field: any) => {
     // Handle field save
     console.log('Field saved:', field)
+  }
+
+  const handleLogout = () => {
+    // Clear localStorage session
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('agroshield_user')
+      console.log('🔒 Session cleared')
+    }
+    
+    // Call parent logout function if available
+    if (onLogout) {
+      onLogout()
+    } else {
+      // Fallback: reload page to clear auth state
+      window.location.reload()
+    }
   }
 
   const stats = [
@@ -169,19 +187,22 @@ export function Dashboard({ user }: DashboardProps) {
             <div className="flex items-center space-x-4">
               <Button variant="outline" size="sm">
                 <Bell className="w-4 h-4 mr-2" />
-                Alerts (3)
+                Alerts
               </Button>
-              
-              <div className="flex items-center space-x-3">
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-900">{profile?.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{profile?.role}</p>
-                </div>
-                <Avatar>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
+              </Button>
+              <div className="flex items-center">
+                <Avatar className="w-8 h-8 mr-2">
                   <AvatarFallback className="bg-green-100 text-green-800">
-                    {profile?.name?.charAt(0)?.toUpperCase()}
+                    {profile?.name?.charAt(0) || 'U'}
                   </AvatarFallback>
                 </Avatar>
+                <div className="hidden sm:block">
+                  <p className="text-sm font-medium text-gray-900">{profile?.name || 'User'}</p>
+                  <p className="text-xs text-gray-500">{profile?.role || 'Farmer'}</p>
+                </div>
               </div>
             </div>
           </div>

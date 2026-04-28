@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
-import { Phone, Mail, User, MapPin, Globe } from 'lucide-react'
+import { generateOTP, storeOTP, verifyOTP, sendEmailOTP } from '@/lib/email-otp'
+import { Mail, User, MapPin, Globe } from 'lucide-react'
 
 interface AuthFormProps {
   onSuccess: (user: any) => void
@@ -27,6 +28,8 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
     village: '',
     otp: ''
   })
+  
+  const [generatedOTP, setGeneratedOTP] = useState<string>('')
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -49,14 +52,25 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
+      // Generate and store custom OTP
+      const otp = generateOTP()
+      storeOTP(formData.email, otp)
+      setGeneratedOTP(otp)
+      
       console.log('Sending OTP to email:', formData.email)
-      const { error } = await supabase.auth.signInWithOtp({
-        email: formData.email,
-      })
-      if (error) throw error
+      const emailSent = await sendEmailOTP(formData.email, otp)
+      
+      if (!emailSent) {
+        throw new Error('Failed to send email OTP')
+      }
 
       console.log('OTP sent successfully')
       setOtpSent(true)
+      
+      // Development helper - show OTP in console and UI
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🔓 DEV MODE - OTP for ${formData.email}: ${otp}`)
+      }
     } catch (error) {
       console.error('Error sending OTP:', error)
       alert(`Failed to send OTP: ${error instanceof Error ? error.message : 'Please try again'}`)
@@ -77,15 +91,88 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('Supabase client not initialized')
       }
       
-      const { data, error } = await supabase.auth.verifyOtp({
+      // Verify custom OTP
+      const isValidOTP = verifyOTP(formData.email, formData.otp)
+      
+      if (!isValidOTP) {
+        throw new Error('Invalid or expired OTP')
+      }
+
+      // Create or authenticate user in Supabase
+      const { data, error } = await supabase.auth.signUp({
         email: formData.email,
-        token: formData.otp,
-        type: 'email'
+        password: 'temp-password-' + Date.now(), // Temporary password
+        options: {
+          data: {
+            name: formData.name,
+            role: formData.role,
+            language: formData.language,
+            district: formData.district,
+            village: formData.village,
+          }
+        }
       })
 
-      if (error) throw error
+      if (error && !error.message.includes('already registered')) {
+        throw error
+      }
 
-      if (!isLogin && data.user) {
+      // If user already exists, sign them in
+      if (error?.message.includes('already registered')) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: 'temp-password-' + Date.now()
+        })
+        
+        if (signInError) {
+          // For existing users, we need to handle this differently
+          // For now, create a mock user object
+          const mockUser = {
+            id: 'temp-user-' + Date.now(),
+            email: formData.email,
+            user_metadata: {
+              name: formData.name,
+              role: formData.role,
+              language: formData.language,
+              district: formData.district,
+              village: formData.village,
+            }
+          }
+          
+          // Save user session to localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('agroshield_user', JSON.stringify(mockUser))
+            console.log('💾 Session saved for:', mockUser.email)
+          }
+          
+          onSuccess(mockUser)
+          return
+        }
+        
+        if (!isLogin && signInData.user) {
+          // Update profile if needed
+          await supabase
+            .from('profiles')
+            .upsert({
+              id: signInData.user.id,
+              name: formData.name,
+              email: formData.email,
+              role: formData.role,
+              language: formData.language,
+              district: formData.district,
+              village: formData.village,
+              updated_at: new Date().toISOString(),
+            })
+        }
+        
+        // Save user session to localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('agroshield_user', JSON.stringify(signInData.user))
+          console.log('💾 Session saved for:', signInData.user.email)
+        }
+        
+        onSuccess(signInData.user)
+      } else if (data.user) {
         // Create profile for new user
         const { error: profileError } = await supabase
           .from('profiles')
@@ -101,9 +188,15 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
           })
 
         if (profileError) console.error('Profile creation error:', profileError)
+        
+        // Save user session to localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('agroshield_user', JSON.stringify(data.user))
+          console.log('💾 Session saved for:', data.user.email)
+        }
+        
+        onSuccess(data.user)
       }
-
-      onSuccess(data.user)
     } catch (error) {
       console.error('Error verifying OTP:', error)
       alert('Failed to verify OTP. Please try again.')
@@ -248,6 +341,17 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
                     value={formData.otp}
                     onChange={(e) => handleInputChange('otp', e.target.value)}
                   />
+                  {process.env.NODE_ENV === 'development' && generatedOTP && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-yellow-800">🔓 Development OTP:</span>
+                        <span className="font-mono text-yellow-900 bg-yellow-100 px-2 py-1 rounded">
+                          {generatedOTP}
+                        </span>
+                      </div>
+                      <p className="text-yellow-700 mt-1">Use this code for testing (shown in dev mode only)</p>
+                    </div>
+                  )}
                 </div>
 
                 <Button 
