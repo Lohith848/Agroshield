@@ -7,7 +7,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # For production (uncomment and update when backend is deployed):
-# NEXT_PUBLIC_API_URL=https://agroshield-ai.vercel.app/
+# NEXT_PUBLIC_API_URL=https://agroshield-r6b5.onrender.com
 
 # OpenStreetMap Configuration
 # NO API KEY NEEDED - OpenStreetMap is completely FREE! 🎉
