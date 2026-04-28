@@ -56,6 +56,10 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
     setLoading(true)
     try {
       // Send OTP via Supabase Auth
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+      
       const { error } = await supabase.auth.signInWithOtp({
         phone: `+91${formData.phone}`,
       })
@@ -79,6 +83,10 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
 
     setLoading(true)
     try {
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+      
       const { data, error } = await supabase.auth.verifyOtp({
         phone: `+91${formData.phone}`,
         token: formData.otp,

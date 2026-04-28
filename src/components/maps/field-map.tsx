@@ -35,10 +35,6 @@ const Polygon = dynamic(
   () => import('react-leaflet').then((mod) => mod.Polygon),
   { ssr: false }
 )
-const useMap = dynamic(
-  () => import('react-leaflet').then((mod) => mod.useMap),
-  { ssr: false }
-)
 
 interface Field {
   id: string
@@ -133,6 +129,25 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
       setMapCenter([lat, lng])
       setMapZoom(13)
     }
+  }
+
+  // Create a wrapper component for map events
+  const MapEvents = () => {
+    const [map, setMap] = useState<any>(null)
+    
+    useEffect(() => {
+      if (map) {
+        const handleClick = (e: any) => {
+          const { lat, lng } = e.latlng
+          handleMapClick(lat, lng)
+        }
+        
+        map.on('click', handleClick)
+        return () => map.off('click', handleClick)
+      }
+    }, [map, isDrawingBoundary, isEditing, newField])
+    
+    return null
   }
 
   const startDrawingBoundary = () => {
@@ -263,10 +278,6 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
                     center={mapCenter}
                     zoom={mapZoom}
                     style={{ height: '100%', width: '100%' }}
-                    onClick={(e) => {
-                      const { lat, lng } = e.latlng
-                      handleMapClick(lat, lng)
-                    }}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
