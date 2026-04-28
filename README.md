@@ -207,10 +207,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🆘 Support
-
-For support, please email support@agroshield.com or join our Discord community.
-
 ## 🌟 Impact
 
 AgroShield aims to:
@@ -221,5 +217,5 @@ AgroShield aims to:
 - Promote sustainable farming practices
 
 ---
-
+Built by Lohith G
 *AgroShield — Precision Agriculture. Less Chemical. More Crop. Safer Farmers.*
