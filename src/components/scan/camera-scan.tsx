@@ -45,19 +45,54 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     { id: '3', name: 'Mixed Crop Field C', crop: 'Mixed', area: '3.2 acres' }
   ]
 
-  // Convert file to base64
-  const fileToBase64 = (file: File): Promise<{ base64: string; mimeType: string }> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const result = reader.result as string
-        const base64 = result.split(',')[1]
-        resolve({ base64, mimeType: file.type || 'image/jpeg' })
-      }
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
+   // Helper: compress base64 image
+   const compressImage = (dataUrl: string, maxWidth = 1080, quality = 0.8): string => {
+     return new Promise<string>((resolve) => {
+       const img = new Image()
+       img.onload = () => {
+         const canvas = document.createElement('canvas')
+         let width = img.width
+         let height = img.height
+         
+         if (width > maxWidth) {
+           height = Math.round((maxWidth / width) * height)
+           width = maxWidth
+         }
+         
+         canvas.width = width
+         canvas.height = height
+         const ctx = canvas.getContext('2d')
+         if (ctx) {
+           ctx.drawImage(img, 0, 0, width, height)
+           const compressed = canvas.toDataURL('image/jpeg', quality)
+           resolve(compressed)
+         } else {
+           resolve(dataUrl)
+         }
+       }
+       img.onerror = () => resolve(dataUrl)
+       img.src = dataUrl
+     })
+   }
+
+   // Convert file to base64 with compression
+   const fileToBase64 = async (file: File, maxWidth = 1080, quality = 0.8): Promise<{ base64: string; mimeType: string }> => {
+     return new Promise((resolve, reject) => {
+       const reader = new FileReader()
+       reader.onload = async (e) => {
+         try {
+           const result = e.target?.result as string
+           const compressed = await compressImage(result, maxWidth, quality)
+           const base64 = compressed.split(',')[1]
+           resolve({ base64, mimeType: 'image/jpeg' })
+         } catch (err) {
+           reject(err)
+         }
+       }
+       reader.onerror = reject
+       reader.readAsDataURL(file)
+     })
+   }
 
   // Capture from camera
   const captureFromCamera = (): { base64: string; mimeType: string } => {
@@ -189,34 +224,188 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     reader.readAsDataURL(file)
   }
 
-  const analyzeImage = async () => {
-    if (!selectedFarm) {
-      setAnalysisError('Please select a field first')
-      return
-    }
+   const analyzeImage = async () => {
+     if (!selectedFarm) {
+       setAnalysisError('Please select a field first')
+       return
+     }
 
-    let imageData: { base64: string; mimeType: string } | null = null
+     let imageData: { base64: string; mimeType: string } | null = null
 
-    try {
-      if (capturedFile) {
-        // File upload
-        imageData = await fileToBase64(capturedFile)
-      } else if (capturedImage) {
-        // Camera capture (already in data URL format)
-        imageData = {
-          base64: capturedImage.split(',')[1],
-          mimeType: 'image/jpeg'
-        }
-      } else {
-        setAnalysisError('No image captured. Please take a photo or upload one.')
-        return
-      }
+     try {
+       // Get compressed image
+       if (capturedFile) {
+         imageData = await fileToBase64(capturedFile, 1080, 0.8)
+       } else if (capturedImage) {
+         const compressed = await compressImage(capturedImage, 1080, 0.8)
+         imageData = {
+           base64: compressed.split(',')[1],
+           mimeType: 'image/jpeg'
+         }
+       } else {
+         setAnalysisError('No image captured. Please take a photo or upload one.')
+         return
+       }
 
-      // Validate base64
-      if (!imageData.base64 || imageData.base64.length < 100) {
-        setAnalysisError('Image conversion failed. Please try again.')
-        return
-      }
+       if (!imageData?.base64 || imageData.base64.length < 100) {
+         setAnalysisError('Image conversion failed. Please try again.')
+         return
+       }
+
+       console.log('📤 Sending to backend API:')
+       console.log('   Base64 length:', imageData.base64.length)
+       console.log('   MIME:', imageData.mimeType)
+
+       setIsUploading(true)
+       setAnalysisError(null)
+
+       const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+       const controller = new AbortController()
+       const timeoutId = setTimeout(() => controller.abort(), 60000)
+
+       const response = await fetch(`${API_BASE}/analyze-crop`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           imageBase64: imageData.base64,
+           mimeType: imageData.mimeType,
+           fieldName: farms.find(f => f.id === selectedFarm)?.name,
+           cropType: farms.find(f => f.id === selectedFarm)?.crop
+         }),
+         signal: controller.signal
+       })
+
+       clearTimeout(timeoutId)
+
+       const data = await response.json()
+
+       if (data.success && data.analysis) {
+         const analysis = data.analysis
+
+         // Save scan to Supabase
+         const { error: scanError } = await supabase!
+           .from('scans')
+           .insert({
+             user_id: user.id,
+             farm_id: selectedFarm,
+             image_url: capturedImage || '',
+             disease_class: analysis.disease || (analysis.isHealthy ? 'healthy' : 'unknown'),
+             confidence: analysis.confidence / 100,
+             severity: analysis.severity,
+             gps_lat: gpsLocation?.lat || null,
+             gps_lng: gpsLocation?.lng || null,
+             scan_method: capturedFile ? 'gallery' : 'manual',
+             ai_model_version: 'gemini-2.0-flash',
+             processing_time_ms: null,
+             is_verified: false,
+             verified_by: null,
+             notes: null
+           })
+
+         if (scanError) console.error('Scan save error:', scanError)
+
+         // Also save to heatmap_points
+         if (gpsLocation) {
+           const { error: heatmapError } = await supabase!
+             .from('heatmap_points')
+             .insert({
+               user_id: user.id,
+               farm_id: selectedFarm,
+               lat: gpsLocation.lat,
+               lng: gpsLocation.lng,
+               severity: analysis.severity,
+               disease: analysis.disease,
+               crop_type: analysis.cropType,
+               confidence: analysis.confidence,
+               spread_risk: analysis.spreadRisk,
+               timestamp: new Date().toISOString()
+             })
+           if (heatmapError) console.error('Heatmap save error:', heatmapError)
+         }
+
+         setScanResult(analysis)
+         onScanComplete({ result: analysis, image_url: capturedImage })
+       } else {
+         console.error('API error response:', data)
+         const errorMsg = data.detail || data.error || 'Analysis failed'
+         setAnalysisError(`Analysis failed: ${errorMsg}`)
+       }
+     } catch (err: any) {
+       console.error('Frontend analyze error:', err)
+       let errorMsg = 'Analysis failed. Please try again.'
+       if (err.name === 'AbortError' || err.message?.includes('timeout')) {
+         errorMsg = 'Request timed out after 60 seconds. Try uploading a smaller image.'
+       } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+         errorMsg = 'Cannot reach server. Ensure backend is running at ' + (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+       } else if (err.message) {
+         errorMsg = `Error: ${err.message}`
+       }
+       setAnalysisError(errorMsg)
+     } finally {
+       setIsUploading(false)
+     }
+   }
+
+     let imageData: { base64: string; mimeType: string } | null = null
+
+     try {
+       if (capturedFile) {
+         // File upload with compression
+         imageData = await fileToBase64(capturedFile, 1080, 0.8)
+       } else if (capturedImage) {
+         // Camera capture - compress the existing image
+         const compressed = await compressImage(capturedImage, 1080, 0.8)
+         imageData = {
+           base64: compressed.split(',')[1],
+           mimeType: 'image/jpeg'
+         }
+       } else {
+         setAnalysisError('No image captured. Please take a photo or upload one.')
+         return
+       }
+
+       // Validate base64
+       if (!imageData?.base64 || imageData.base64.length < 100) {
+         setAnalysisError('Image conversion failed. Please try again.')
+         return
+       }
+
+       console.log('📤 Sending to API:')
+       console.log('   Base64 length:', imageData.base64.length)
+       console.log('   MIME:', imageData.mimeType)
+
+       setIsUploading(true)
+       setAnalysisError(null)
+
+       const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+       // Add timeout to fetch
+       const controller = new AbortController()
+       const timeoutId = setTimeout(() => controller.abort(), 60000) // 60s timeout
+
+       const response = await fetch(`${API_BASE}/analyze-crop`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           imageBase64: imageData.base64,
+           mimeType: imageData.mimeType,
+           fieldName: farms.find(f => f.id === selectedFarm)?.name,
+           cropType: farms.find(f => f.id === selectedFarm)?.crop
+         }),
+         signal: controller.signal
+       })
+
+       clearTimeout(timeoutId)
+       } else {
+         setAnalysisError('No image captured. Please take a photo or upload one.')
+         return
+       }
+
+       // Validate base64
+       if (!imageData?.base64 || imageData.base64.length < 100) {
+         setAnalysisError('Image conversion failed. Please try again.')
+         return
+       }
 
       console.log('📤 Sending to API:')
       console.log('   Base64 length:', imageData.base64.length)
@@ -289,12 +478,26 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
          const errorMsg = data.hint || data.details || data.error || 'Analysis failed'
          setAnalysisError(`Analysis failed: ${errorMsg}`)
        }
-     } catch (err: any) {
-      console.error('Frontend analyze error:', err)
-      setAnalysisError(`Network error: ${err.message}`)
-    } finally {
-      setIsUploading(false)
-    }
+      } catch (err: any) {
+        console.error('Frontend analyze error:', err)
+        
+        let errorMsg = 'Analysis failed. Please try again.'
+        if (err.name === 'AbortError') {
+          errorMsg = 'Request timed out after 60 seconds. Please try with a smaller image or check your connection.'
+        } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+          errorMsg = 'Cannot reach server. Please check your internet connection and ensure backend is running.'
+        } else if (err.message?.includes('429')) {
+          errorMsg = 'Too many requests. Please wait a moment and try again.'
+        } else if (err.message?.includes('401') || err.message?.includes('API key')) {
+          errorMsg = 'Server configuration error: Invalid Gemini API key. Contact support.'
+        } else if (err.message) {
+          errorMsg = `Error: ${err.message}`
+        }
+        
+        setAnalysisError(errorMsg)
+      } finally {
+        setIsUploading(false)
+      }
   }
 
   const handleShare = async (result: any) => {
