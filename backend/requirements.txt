@@ -9,10 +9,9 @@ passlib[bcrypt]>=1.7.4,<2.0
 
 # Database & API clients
 supabase>=1.0.4,<2.0
-# Critical: supabase requires httpx>=0.24,<0.25 and httpcore>=1.0,<2.0
-# Python 3.14 needs httpcore>=1.0.4 to avoid typing.Union __module__ bug
+# supabase requires httpx>=0.24,<0.25 which depends on httpcore<0.18
 httpx>=0.24.0,<0.25.0
-httpcore>=1.0.4,<2.0
+httpcore>=0.15.0,<0.18.0
 requests>=2.31.0,<3.0
 
 # Environment & config
