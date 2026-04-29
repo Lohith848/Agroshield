@@ -480,15 +480,28 @@ Required JSON structure:
         
         print("🤖 Sending to Gemini...")
         
-        result = await model.generate_content_async([
-            {"text": prompt},
-            {
-                "inline_data": {
-                    "mimeType": finalMimeType,
-                    "data": imageBase64
+        try:
+            # Try async first (preferred)
+            result = await model.generate_content_async([
+                {"text": prompt},
+                {
+                    "inline_data": {
+                        "mime_type": finalMimeType,
+                        "data": imageBase64
+                    }
                 }
-            }
-        ])
+            ])
+        except AttributeError:
+            # Fallback to sync if async not available
+            result = model.generate_content([
+                {"text": prompt},
+                {
+                    "inline_data": {
+                        "mime_type": finalMimeType,
+                        "data": imageBase64
+                    }
+                }
+            ])
         
         responseText = result.text
         print(f"📥 Response received: {len(responseText)} chars")
