@@ -6,11 +6,13 @@ from typing import List, Optional
 import os
 import base64
 import json
+import re
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import uvicorn
 import requests
 from ai_service import detection_service, initialize_ai_service
+from google.generativeai import configure, GenerativeModel
 
 load_dotenv()
 
@@ -395,6 +397,134 @@ async def get_disease_information(disease_class: str):
         return disease_info
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Gemini AI Crop Analysis Endpoint
+@app.post("/analyze-crop")
+async def analyze_crop_image(request: dict):
+    """
+    Analyze crop image using Google Gemini AI
+    
+    Expected JSON body:
+    {
+        "imageBase64": "base64 encoded image string",
+        "mimeType": "image/jpeg",
+        "fieldName": "Field name (optional)",
+        "cropType": "Crop type (optional)"
+    }
+    """
+    try:
+        imageBase64 = request.get("imageBase64")
+        mimeType = request.get("mimeType", "image/jpeg")
+        fieldName = request.get("fieldName", "")
+        cropType = request.get("cropType", "")
+        
+        if not imageBase64:
+            raise HTTPException(status_code=400, detail="No image provided")
+        
+        if len(imageBase64) < 100:
+            raise HTTPException(status_code=400, detail="Image too small or corrupted")
+        
+        apiKey = os.getenv("GEMINI_API_KEY")
+        if not apiKey:
+            raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured on server")
+        
+        validMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/heic"]
+        finalMimeType = mimeType if mimeType in validMimeTypes else "image/jpeg"
+        
+        print(f"📸 Analysis request: {fieldName or 'Unknown'}, {cropType or 'Auto-detect'}, size: {round(len(imageBase64) * 0.75 / 1024)} KB")
+        
+        configure(api_key=apiKey)
+        model = GenerativeModel(
+            "gemini-2.0-flash",
+            generationConfig={
+                "temperature": 0.1,
+                "topK": 32,
+                "topP": 1,
+                "maxOutputTokens": 1024,
+            }
+        )
+        
+        prompt = f"""You are an expert agricultural plant pathologist AI specialized in Indian crops. Analyze this crop image carefully.
+
+Context:
+- Field Name: {fieldName or "Not specified"}
+- Crop Type: {cropType or "Auto-detect from image"}
+- Location: India
+
+IMPORTANT: Respond ONLY with a valid JSON object. No markdown. No backticks. No explanation. Start with {{ and end with }}.
+
+Required JSON structure:
+{{
+  "cropType": "crop name",
+  "isHealthy": true or false,
+  "disease": "disease name or null",
+  "pestDetected": "pest name or null",
+  "severity": "healthy" | "mild" | "moderate" | "severe",
+  "confidence": 0-100,
+  "affectedAreaPercent": 0-100,
+  "cause": "fungal" | "bacterial" | "viral" | "pest" | "nutrient_deficiency" | "unknown",
+  "symptoms": ["string"],
+  "treatment": {{
+    "chemical": "specific chemical name",
+    "dosage": "dosage per acre",
+    "applicationMethod": "spray/soil drench/foliar",
+    "frequency": "how often"
+  }},
+  "organicAlternative": "organic treatment or null",
+  "urgency": "immediate" | "within_3_days" | "within_a_week" | "monitor_only",
+  "spreadRisk": "high" | "medium" | "low",
+  "estimatedYieldLoss": "percentage",
+  "preventionTips": ["tip1", "tip2", "tip3"],
+  "nextScanRecommended": "when to scan again"
+}}"""
+        
+        print("🤖 Sending to Gemini...")
+        
+        result = model.generate_content([
+            {"text": prompt},
+            {
+                "inline_data": {
+                    "mimeType": finalMimeType,
+                    "data": imageBase64
+                }
+            }
+        ])
+        
+        responseText = result.text
+        print(f"📥 Response received: {len(responseText)} chars")
+        
+        # Clean and extract JSON
+        cleaned = re.sub(r'```json\n?', '', responseText)
+        cleaned = re.sub(r'```\n?', '', cleaned)
+        cleaned = cleaned.strip()
+        
+        jsonStart = cleaned.find("{")
+        jsonEnd = cleaned.rfind("}")
+        
+        if jsonStart == -1 or jsonEnd == -1:
+            raise HTTPException(status_code=500, detail="AI returned invalid format")
+        
+        cleaned = cleaned[jsonStart:jsonEnd + 1]
+        analysis = json.loads(cleaned)
+        
+        # Defaults
+        if analysis.get("confidence") is None:
+            analysis["confidence"] = 70
+        if not analysis.get("severity"):
+            analysis["severity"] = "unknown"
+        if "isHealthy" not in analysis:
+            analysis["isHealthy"] = not bool(analysis.get("disease"))
+        
+        print(f"✅ Analysis: {analysis.get('cropType')}, {analysis.get('disease')}, severity: {analysis.get('severity')}")
+        
+        return {"success": True, "analysis": analysis}
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parse error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI response parsing failed: {str(e)}")
+    except Exception as e:
+        print(f"❌ Gemini API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 # Weather API Endpoint
 @app.get("/weather/current")
