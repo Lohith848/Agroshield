@@ -108,7 +108,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     },
     {
       title: "Health Score",
-      value: "87%",
+      value: "89%",
       change: "+5%",
       icon: Leaf,
       color: "text-green-600",
@@ -144,7 +144,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     },
     {
       id: 2,
-      farm: "Chili Field B", 
+      farm: "Chilli Field B", 
       disease: "Healthy",
       severity: "healthy",
       confidence: 96,
@@ -153,7 +153,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     },
     {
       id: 3,
-      farm: "Tomato Field A",
+      farm: "Potato Field C",
       disease: "Leaf Curl",
       severity: "mild",
       confidence: 78,
