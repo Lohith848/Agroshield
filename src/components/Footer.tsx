@@ -47,6 +47,7 @@ export default function Footer() {
         letterSpacing: '0.3px'
       }}>
         Lohith G
+        
       </div>
 
       {/* Tech Stack badges */}
