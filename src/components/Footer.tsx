@@ -46,14 +46,7 @@ export default function Footer() {
         marginBottom: '4px',
         letterSpacing: '0.3px'
       }}>
-        Lohith
-      </div>
-      <div style={{
-        fontSize: '12px',
-        color: 'rgba(255,255,255,0.5)',
-        marginBottom: '20px'
-      }}>
-        G
+        Lohith G
       </div>
 
       {/* Tech Stack badges */}
@@ -64,7 +57,7 @@ export default function Footer() {
         gap: '8px',
         marginBottom: '20px'
       }}>
-        {['Next.js', 'Gemini AI', 'Firebase', 'OpenStreetMap', 'Vercel'].map(tech => (
+        {['Next.js', 'Gemini AI', 'Supabase', 'OpenStreetMap', 'Vercel', 'Newsapi', 'Render', 'Github'].map(tech => (
           <span key={tech} style={{
             background: 'rgba(255,255,255,0.1)',
             border: '1px solid rgba(255,255,255,0.2)',
