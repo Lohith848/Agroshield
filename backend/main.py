@@ -7,19 +7,51 @@ import os
 import base64
 import json
 import re
+import logging
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import uvicorn
 import requests
 from ai_service import detection_service, initialize_ai_service
-from google.generativeai import configure, GenerativeModel
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# Log environment on startup
+logger.info("🔧 Environment check:")
+logger.info(f"   PORT: {os.getenv('PORT', 'not set')}")
+logger.info(f"   GEMINI_API_KEY: {'set' if os.getenv('GEMINI_API_KEY') else 'MISSING'}")
+logger.info(f"   SUPABASE_URL: {'set' if os.getenv('SUPABASE_URL') else 'MISSING'}")
 
 # Get port from environment (Render sets this)
 PORT = int(os.getenv("PORT", 8000))
 
 app = FastAPI(title="AgroShield API", version="1.0.0")
+
+# Lazy import of google.generativeai to avoid import-time failures
+def get_gemini_model():
+    """Get configured Gemini model - lazy import for compatibility"""
+    try:
+        from google.generativeai import configure, GenerativeModel
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not set")
+        configure(api_key=api_key)
+        return GenerativeModel(
+            "gemini-2.0-flash",
+            generationConfig={
+                "temperature": 0.1,
+                "topK": 32,
+                "topP": 1,
+                "maxOutputTokens": 1024,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini: {e}")
+        raise
 
 # CORS middleware - allow all origins in production
 app.add_middleware(
@@ -389,6 +421,23 @@ def calculate_health_score(severity_counts):
     health_score = max(0, 100 - (weighted_score / total) * 100)
     return round(health_score, 1)
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
+    logger.info("🚀 AgroShield API starting...")
+    try:
+        initialize_ai_service()
+        logger.info("✅ AI service initialized (YOLO model loaded)")
+    except Exception as e:
+        logger.error(f"⚠️  AI service initialization warning: {e}")
+    
+    # Test Gemini availability (won't crash if missing)
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        logger.info("✅ GEMINI_API_KEY is configured")
+    else:
+        logger.warning("⚠️  GEMINI_API_KEY not set - /analyze-crop endpoint will fail")
+
 @app.get("/disease/info/{disease_class}")
 async def get_disease_information(disease_class: str):
     """Get detailed information about a specific disease"""
@@ -424,25 +473,17 @@ async def analyze_crop_image(request: dict):
         if len(imageBase64) < 100:
             raise HTTPException(status_code=400, detail="Image too small or corrupted")
         
-        apiKey = os.getenv("GEMINI_API_KEY")
-        if not apiKey:
-            raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured on server")
+        logger.info(f"📸 Analysis request: field={fieldName}, crop={cropType}, size={round(len(imageBase64)*0.75/1024)}KB")
+        
+        # Get Gemini model (lazy import)
+        try:
+            model = get_gemini_model()
+        except Exception as e:
+            logger.error(f"Gemini initialization failed: {e}")
+            raise HTTPException(status_code=500, detail="AI service not configured: " + str(e))
         
         validMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/heic"]
         finalMimeType = mimeType if mimeType in validMimeTypes else "image/jpeg"
-        
-        print(f"📸 Analysis request: {fieldName or 'Unknown'}, {cropType or 'Auto-detect'}, size: {round(len(imageBase64) * 0.75 / 1024)} KB")
-        
-        configure(api_key=apiKey)
-        model = GenerativeModel(
-            "gemini-2.0-flash",
-            generationConfig={
-                "temperature": 0.1,
-                "topK": 32,
-                "topP": 1,
-                "maxOutputTokens": 1024,
-            }
-        )
         
         prompt = f"""You are an expert agricultural plant pathologist AI specialized in Indian crops. Analyze this crop image carefully.
 
@@ -478,10 +519,10 @@ Required JSON structure:
   "nextScanRecommended": "when to scan again"
 }}"""
         
-        print("🤖 Sending to Gemini...")
+        logger.info("🤖 Sending to Gemini API...")
         
         try:
-            # Try async first (preferred)
+            # Try async first
             result = await model.generate_content_async([
                 {"text": prompt},
                 {
@@ -492,7 +533,8 @@ Required JSON structure:
                 }
             ])
         except AttributeError:
-            # Fallback to sync if async not available
+            # Fallback to sync
+            logger.info("Async not available, using sync Gemini API")
             result = model.generate_content([
                 {"text": prompt},
                 {
@@ -504,9 +546,9 @@ Required JSON structure:
             ])
         
         responseText = result.text
-        print(f"📥 Response received: {len(responseText)} chars")
+        logger.info(f"📥 Gemini response: {len(responseText)} chars")
         
-        # Clean and extract JSON
+        # Clean and parse JSON
         cleaned = re.sub(r'```json\n?', '', responseText)
         cleaned = re.sub(r'```\n?', '', cleaned)
         cleaned = cleaned.strip()
@@ -515,6 +557,7 @@ Required JSON structure:
         jsonEnd = cleaned.rfind("}")
         
         if jsonStart == -1 or jsonEnd == -1:
+            logger.error(f"No JSON in response: {cleaned[:200]}")
             raise HTTPException(status_code=500, detail="AI returned invalid format")
         
         cleaned = cleaned[jsonStart:jsonEnd + 1]
@@ -528,15 +571,17 @@ Required JSON structure:
         if "isHealthy" not in analysis:
             analysis["isHealthy"] = not bool(analysis.get("disease"))
         
-        print(f"✅ Analysis: {analysis.get('cropType')}, {analysis.get('disease')}, severity: {analysis.get('severity')}")
+        logger.info(f"✅ Analysis result: crop={analysis.get('cropType')}, disease={analysis.get('disease')}, severity={analysis.get('severity')}")
         
         return {"success": True, "analysis": analysis}
         
     except json.JSONDecodeError as e:
-        print(f"❌ JSON parse error: {e}")
+        logger.error(f"JSON parse error: {e}")
         raise HTTPException(status_code=500, detail=f"AI response parsing failed: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ Gemini API error: {str(e)}")
+        logger.error(f"Gemini API error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 # Weather API Endpoint
