@@ -61,17 +61,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supabase client - exit if missing
+# Supabase client - safe initialization
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not supabase_url or not supabase_key:
-    print("⚠️  WARNING: Supabase environment variables not set!")
-    print("   SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
-    # Create empty client (will fail on DB operations)
+    logger.warning("⚠️  Supabase env vars not set — database features disabled")
     supabase = None
 else:
-    supabase = create_client(supabase_url, supabase_key)
+    try:
+        supabase = create_client(supabase_url, supabase_key)
+        logger.info("✅ Supabase client initialized")
+    except Exception as e:
+        logger.error(f"❌ Supabase initialization failed: {e}")
+        supabase = None
 
 # Security
 security = HTTPBearer()
