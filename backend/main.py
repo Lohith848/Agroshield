@@ -480,7 +480,7 @@ Required JSON structure:
         
         print("🤖 Sending to Gemini...")
         
-        result = model.generate_content([
+        result = await model.generate_content_async([
             {"text": prompt},
             {
                 "inline_data": {
