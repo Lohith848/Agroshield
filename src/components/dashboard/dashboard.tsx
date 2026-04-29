@@ -23,6 +23,7 @@ import { CameraScan } from '@/components/scan/camera-scan'
 import { FieldMap } from '@/components/maps/field-map'
 import { InfectionHeatmap } from '@/components/maps/infection-heatmap'
 import { MarketPriceWidget } from '@/components/dashboard/market-price-widget'
+import { ScanHistory } from '@/components/dashboard/scan-history'
 import { getWeatherByCoords, getWeatherIconUrl } from '@/lib/weather'
 import { getAgriculturalNews, formatNewsDate, getNewsCategory } from '@/lib/news'
 
@@ -470,11 +471,12 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
         {/* Tabs for other sections */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="scans">Scans</TabsTrigger>
+            <TabsTrigger value="camera">Camera</TabsTrigger>
             <TabsTrigger value="fields">Fields</TabsTrigger>
             <TabsTrigger value="heatmap">Heatmap</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -545,28 +547,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             </div>
           </TabsContent>
 
-          <TabsContent value="scans" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Scan History</CardTitle>
-                <CardDescription>
-                  Complete history of all crop scans and disease detections
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <Camera className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">No scans yet. Start by scanning your crops!</p>
-                  <Button 
-                    className="bg-green-600 hover:bg-green-700"
-                    onClick={() => setShowCameraScan(true)}
-                  >
-                    <Camera className="w-4 h-4 mr-2" />
-                    New Scan
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+          <TabsContent value="history" className="space-y-6">
+            <ScanHistory />
           </TabsContent>
 
           <TabsContent value="fields" className="space-y-6">
