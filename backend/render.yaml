@@ -4,7 +4,10 @@ services:
     env: python
     region: oregon
     plan: free
+    pythonVersion: "3.12"
     buildCommand: |
+      # Update pip first
+      python -m pip install --upgrade pip
       # Install Python dependencies
       pip install -r requirements.txt
       # Download YOLOv8 model if not present
