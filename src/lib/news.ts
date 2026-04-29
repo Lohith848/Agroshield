@@ -1,5 +1,4 @@
 // Agricultural News API utilities
-import { getAgriculturalNews as fetchNews } from './weather'
 
 export type NewsArticle = {
   title: string
@@ -11,7 +10,25 @@ export type NewsArticle = {
 }
 
 export async function getAgriculturalNews(): Promise<NewsArticle[]> {
-  return fetchNews()
+  try {
+    const res = await fetch('/api/news', {
+      // Revalidate every hour
+      next: { revalidate: 3600 }
+    })
+    if (!res.ok) throw new Error('Failed to fetch news')
+    const articles = await res.json()
+    return articles.map((article: any) => ({
+      title: article.title,
+      description: article.description,
+      url: article.url,
+      imageUrl: article.urlToImage || '',
+      publishedAt: article.publishedAt,
+      source: article.source?.name || 'News'
+    }))
+  } catch (error) {
+    console.error('Error fetching agricultural news:', error)
+    return []
+  }
 }
 
 export function formatNewsDate(dateString: string): string {

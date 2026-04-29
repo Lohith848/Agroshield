@@ -2,21 +2,23 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
+import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { 
-  MapPin, 
-  Save, 
-  Edit3, 
-  Layers, 
+import {
+  MapPin,
+  Save,
+  Edit3,
+  Layers,
   Search,
   Plus,
   Trash2
 } from 'lucide-react'
+import { FieldTimeline } from './field-timeline'
 
 // Dynamically import Leaflet to avoid SSR issues
 const MapContainer = dynamic(
@@ -82,6 +84,22 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
   const irrigationTypes = [
     'Drip Irrigation', 'Sprinkler', 'Flood Irrigation', 'Rain-fed', 'Manual'
   ]
+
+  // Fix Leaflet marker icons on client side
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      import('leaflet').then((L) => {
+        // @ts-ignore
+        const proto = L.Icon.Default.prototype as any
+        delete proto._getIconUrl
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl: "/leaflet/marker-icon-2x.png",
+          iconUrl: "/leaflet/marker-icon.png",
+          shadowUrl: "/leaflet/marker-shadow.png",
+        })
+      })
+    }
+  }, [])
 
   // Load user's fields
   useEffect(() => {
@@ -170,10 +188,38 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
     setIsDrawingBoundary(false)
   }
 
-  const saveField = () => {
-    if (newField.name && newField.crop_type) {
+  const saveField = async () => {
+    // Validate input
+    if (!newField.name || !newField.crop_type) {
+      alert('Please fill in field name and crop type')
+      return
+    }
+
+    if (!supabase) {
+      alert('Database connection error')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase!
+        .from('farms')
+        .insert({
+          owner_id: user.id,
+          name: newField.name,
+          crop_type: newField.crop_type,
+          area_acres: newField.area_acres || 1,
+          center_lat: newField.center_lat || 11.1271,
+          center_lng: newField.center_lng || 78.6569,
+          soil_type: newField.soil_type || null,
+          irrigation_type: newField.irrigation_type || null,
+          is_active: true
+        })
+        .select()
+
+      if (error) throw error
+
       const field: Field = {
-        id: Date.now().toString(),
+        id: data[0].id,
         name: newField.name,
         crop_type: newField.crop_type,
         area_acres: newField.area_acres || 1,
@@ -183,10 +229,10 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
         irrigation_type: newField.irrigation_type,
         boundary: newField.boundary
       }
-      
+
       setFields(prev => [...prev, field])
       onFieldSaved?.(field)
-      
+
       // Reset form
       setNewField({
         name: '',
@@ -199,13 +245,28 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
       })
       setIsEditing(false)
       setBoundaryPoints([])
+    } catch (err) {
+      console.error('Error saving field:', err)
+      alert('Failed to save field. Please try again.')
     }
   }
 
-  const deleteField = (fieldId: string) => {
-    setFields(prev => prev.filter(f => f.id !== fieldId))
-    if (selectedField?.id === fieldId) {
-      setSelectedField(null)
+  const deleteField = async (fieldId: string) => {
+    if (!supabase) return
+    try {
+      const { error } = await supabase!
+        .from('farms')
+        .delete()
+        .eq('id', fieldId)
+      if (error) throw error
+
+      setFields(prev => prev.filter(f => f.id !== fieldId))
+      if (selectedField?.id === fieldId) {
+        setSelectedField(null)
+      }
+    } catch (err) {
+      console.error('Error deleting field:', err)
+      alert('Failed to delete field')
     }
   }
 
@@ -271,14 +332,14 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
                   Click on the map to place field markers or draw boundaries
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                {/* Map Component */}
-                <div className="h-96 rounded-lg overflow-hidden border">
-                  <MapContainer
-                    center={mapCenter}
-                    zoom={mapZoom}
-                    style={{ height: '100%', width: '100%' }}
-                  >
+               <CardContent>
+                 {/* Map Component */}
+                 <div style={{ position: "relative", width: "100%", height: "350px", overflow: "hidden", borderRadius: "8px", background: "#000" }}>
+                   <MapContainer
+                     center={mapCenter}
+                     zoom={mapZoom}
+                     style={{ height: "350px", width: "100%", borderRadius: "8px" }}
+                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -417,7 +478,8 @@ export function FieldMap({ user, onFieldSaved }: FieldMapProps) {
                         {selectedField.boundary.length} points defined
                       </p>
                     </div>
-                  )}
+                   )}
+                  <FieldTimeline fieldId={selectedField.id} />
                 </CardContent>
               </Card>
             )}

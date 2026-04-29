@@ -5,17 +5,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { 
-  Camera, 
-  Upload, 
-  MapPin, 
-  Leaf, 
-  AlertTriangle, 
+import {
+  Camera,
+  Upload,
+  MapPin,
+  Leaf,
   CheckCircle,
   Loader2,
   X,
   RotateCcw
 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 interface CameraScanProps {
   user: any
@@ -31,10 +31,10 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
   const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
-  
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Mock farms data
   const farms = [
@@ -43,62 +43,58 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     { id: '3', name: 'Mixed Crop Field C', crop: 'Mixed', area: '3.2 acres' }
   ]
 
-  // Start camera on component mount
-  useEffect(() => {
+  const startCamera = async () => {
+    try {
+      const video = videoRef.current
+      if (video?.srcObject instanceof MediaStream) {
+        video.srcObject.getTracks().forEach(t => t.stop())
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      })
+
+      if (!video) return
+
+      video.srcObject = stream
+      video.setAttribute("playsinline", "true")
+      video.setAttribute("autoplay", "true")
+      video.muted = true
+
+      // Wait for video to be ready and start playing
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => {
+          video.onloadedmetadata = () => resolve()
+        })
+      }
+      await video.play().catch(err => console.error('Video play error:', err))
+      setIsScanning(true)
+    } catch (err) {
+      console.error("Camera error:", err)
+      setIsScanning(false)
+    }
+   }
+
+   useEffect(() => {
     startCamera()
-    
+
     return () => {
-      stopCamera()
+      const video = videoRef.current
+      if (video?.srcObject instanceof MediaStream) {
+        video.srcObject.getTracks().forEach(track => track.stop())
+      }
     }
   }, [])
 
-  const startCamera = async () => {
-    try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-      }
-
-      const constraints: MediaStreamConstraints = {
-        video: { 
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: { ideal: 'environment' }
-        },
-        audio: false
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        streamRef.current = stream
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(err => {
-            console.error('Video play error:', err)
-          })
-        }
-      }
-      
-      setIsScanning(true)
-    } catch (error: any) {
-      console.error('Error accessing camera:', error)
-      let message = 'Unable to access camera. '
-      if (error.name === 'NotAllowedError') {
-        message += 'Please allow camera permissions.'
-      } else if (error.name === 'NotFoundError') {
-        message += 'No camera found.'
-      } else {
-        message += error.message || 'Please check permissions.'
-      }
-      alert(message)
-      setIsScanning(false)
-    }
-  }
-
   const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
+    const video = videoRef.current
+    if (video?.srcObject instanceof MediaStream) {
+      video.srcObject.getTracks().forEach(track => track.stop())
     }
     setIsScanning(false)
   }
@@ -108,17 +104,16 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       const video = videoRef.current
       const canvas = canvasRef.current
       const context = canvas.getContext('2d')
-      
+
       if (context) {
         canvas.width = video.videoWidth
         canvas.height = video.videoHeight
         context.drawImage(video, 0, 0)
-        
+
         const imageData = canvas.toDataURL('image/jpeg', 0.8)
         setCapturedImage(imageData)
         stopCamera()
-        
-        // Get GPS location
+
         getCurrentLocation()
       }
     }
@@ -148,9 +143,40 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     startCamera()
   }
 
-  const uploadScan = async () => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !selectedFarm) return
+
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const imageData = e.target?.result as string
+      setCapturedImage(imageData)
+      stopCamera()
+      getCurrentLocation()
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const analyzeImage = async () => {
     if (!capturedImage || !selectedFarm) {
       alert('Please select a farm and capture an image')
+      return
+    }
+
+    if (!navigator.onLine) {
+      const { queueScan } = await import('@/utils/offlineQueue')
+      await queueScan({
+        imageBase64: capturedImage.replace(/^data:image\/\w+;base64,/, ''),
+        mimeType: 'image/jpeg',
+        fieldName: farms.find(f => f.id === selectedFarm)?.name,
+        cropType: farms.find(f => f.id === selectedFarm)?.crop,
+        farm_id: selectedFarm,
+        user_id: user.id
+      })
+      alert('You are offline. Scan saved and will auto-upload when connected.')
+      setCapturedImage(null)
+      setGpsLocation(null)
+      startCamera()
       return
     }
 
@@ -158,48 +184,86 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
     setAnalysisError(null)
 
     try {
-      const response = await fetch(capturedImage)
-      const blob = await response.blob()
-      const file = new File([blob], 'scan.jpg', { type: 'image/jpeg' })
+      const base64Data = capturedImage.replace(/^data:image\/\w+;base64,/, '')
 
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('user_id', user.id)
-      formData.append('farm_id', selectedFarm)
-      if (gpsLocation) {
-        formData.append('gps_lat', gpsLocation.lat.toString())
-        formData.append('gps_lng', gpsLocation.lng.toString())
-      }
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const uploadResponse = await fetch(`${apiUrl}/scan/analyze-groq`, {
+      const response = await fetch('/api/analyze-crop', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: base64Data,
+          mimeType: 'image/jpeg',
+          fieldName: farms.find(f => f.id === selectedFarm)?.name,
+          cropType: farms.find(f => f.id === selectedFarm)?.crop
+        })
       })
 
-      if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json().catch(() => ({}))
-        throw new Error(errorData.detail || 'Upload failed')
+      if (!response.ok) throw new Error('Analysis failed')
+
+      const data = await response.json()
+      if (data.success) {
+        const analysis = data.analysis
+
+        const { error: scanError } = await supabase!
+          .from('scans')
+          .insert({
+            user_id: user.id,
+            farm_id: selectedFarm,
+            image_url: capturedImage,
+            disease_class: analysis.disease || (analysis.isHealthy ? 'healthy' : 'unknown'),
+            confidence: analysis.confidence / 100,
+            severity: analysis.severity,
+            gps_lat: gpsLocation?.lat || null,
+            gps_lng: gpsLocation?.lng || null,
+            scan_method: 'manual',
+            ai_model_version: 'gemini-2.0-flash',
+            processing_time_ms: null,
+            is_verified: false,
+            verified_by: null,
+            notes: null
+          })
+
+        if (scanError) console.error('Error saving scan:', scanError)
+
+        setScanResult(analysis)
+        onScanComplete({ result: analysis, image_url: capturedImage })
+      } else {
+        throw new Error(data.error || 'Analysis failed')
       }
-
-      const result = await uploadResponse.json()
-      const analysis = result.result || result
-      
-      setScanResult({
-        result: analysis,
-        image_url: result.image_url || capturedImage,
-        disease_info: result.disease_info,
-        scan_id: result.scan_id
-      })
-      
-      onScanComplete({ result: analysis, image_url: result.image_url })
-
     } catch (error) {
       console.error('Error analyzing scan:', error)
       setAnalysisError(error instanceof Error ? error.message : 'Failed to analyze image')
     } finally {
       setIsUploading(false)
     }
+  }
+
+  const handleShare = async (result: any) => {
+    const text = `🌿 AgroShield Scan Result\n\n` +
+      `Crop: ${result.cropType}\n` +
+      `Disease: ${result.disease || "Healthy"}\n` +
+      `Severity: ${result.severity?.toUpperCase()}\n` +
+      `Confidence: ${result.confidence}%\n` +
+      `Urgency: ${result.urgency?.replace(/_/g, " ")}\n\n` +
+      `Treatment: ${result.treatment?.chemical || "None needed"}\n` +
+      `Dosage: ${result.treatment?.dosage || "N/A"}\n\n` +
+      `Scanned via AgroShield AI — agroshield-ai.vercel.app`
+
+    if (navigator.share) {
+      await navigator.share({ title: "AgroShield Scan", text })
+    } else {
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`
+      window.open(whatsappUrl, "_blank")
+    }
+  }
+
+  const getUrgencyLabel = (urgency: string) => {
+    const labels: Record<string, string> = {
+      immediate: "⚠️ Act Today",
+      within_3_days: "⏰ Within 3 Days",
+      within_a_week: "📅 Within a Week",
+      monitor_only: "👀 Monitor Only"
+    }
+    return labels[urgency || 'monitor_only'] || urgency
   }
 
   return (
@@ -226,21 +290,29 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
             {/* Camera Preview */}
             <div className="flex-1 relative bg-gray-900">
               {isScanning ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
+                <div style={{ position: "relative", width: "100%", height: "60vh", overflow: "hidden", background: "#000" }}>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      display: "block",
+                      background: "#000"
+                    }}
+                  />
+                </div>
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <div className="text-center text-white px-4">
                     <Camera className="w-16 h-16 mx-auto mb-4 text-gray-500" />
                     <p className="text-lg">Camera is starting...</p>
                     <p className="text-sm text-gray-400 mt-2">Please allow camera access</p>
-                    <Button 
-                      onClick={startCamera} 
+                    <Button
+                      onClick={startCamera}
                       className="mt-4 bg-green-600 hover:bg-green-700"
                     >
                       Start Camera
@@ -257,7 +329,7 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                       variant="ghost"
                       size="icon"
                       className="text-white hover:bg-gray-800 rounded-full flex-shrink-0"
-                      onClick={() => alert('Gallery upload coming soon!')}
+                      onClick={() => fileInputRef.current?.click()}
                     >
                       <Upload className="w-6 h-6" />
                     </Button>
@@ -314,6 +386,26 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                   </Select>
                 </div>
 
+                {/* File Upload (hidden input) */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  ref={fileInputRef}
+                />
+
+                {/* Upload from Gallery Button (always visible) */}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload from Gallery
+                </Button>
+
                 {/* Error Message */}
                 {analysisError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -332,7 +424,87 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
                     Retake
                   </Button>
                   <Button
-                    onClick={uploadScan}
+                    onClick={analyzeImage}
+                    disabled={!selectedFarm || isUploading}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Leaf className="w-4 h-4 mr-2" />
+                        Analyze & Save
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : !scanResult ? (
+          <>
+            {/* Captured Image Preview */}
+            <div className="flex-1 relative bg-black flex items-center justify-center">
+              <img
+                src={capturedImage}
+                alt="Captured scan"
+                className="max-w-full max-h-full object-contain"
+              />
+
+              {/* Location Badge */}
+              {gpsLocation && (
+                <div className="absolute top-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-full text-sm flex items-center">
+                  <MapPin className="w-4 h-4 mr-1" />
+                  {gpsLocation.lat.toFixed(4)}, {gpsLocation.lng.toFixed(4)}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Controls */}
+            <div className="bg-gray-100 p-4 border-t" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+              <div className="max-w-md mx-auto space-y-4">
+                {/* Farm Selector */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Select Field</label>
+                  <Select value={selectedFarm} onValueChange={setSelectedFarm}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a field" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {farms.map((farm) => (
+                        <SelectItem key={farm.id} value={farm.id}>
+                          <div>
+                            <div className="font-medium">{farm.name}</div>
+                            <div className="text-sm text-gray-500">{farm.crop} • {farm.area}</div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Error Message */}
+                {analysisError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-800">{analysisError}</p>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={retakePhoto}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Retake
+                  </Button>
+                  <Button
+                    onClick={analyzeImage}
                     disabled={!selectedFarm || isUploading}
                     className="flex-1 bg-green-600 hover:bg-green-700"
                   >
@@ -354,205 +526,194 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
           </>
         ) : (
           <>
-            {!scanResult ? (
-              <>
-                {/* Captured Image Preview */}
-                <div className="flex-1 relative bg-black flex items-center justify-center">
-                  <img 
-                    src={capturedImage} 
-                    alt="Captured scan" 
-                    className="max-w-full max-h-full object-contain"
-                  />
-                   
-                  {/* Location Badge */}
-                  {gpsLocation && (
-                    <div className="absolute top-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded-full text-sm flex items-center">
-                      <MapPin className="w-4 h-4 mr-1" />
-                      {gpsLocation.lat.toFixed(4)}, {gpsLocation.lng.toFixed(4)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Bottom Controls */}
-                <div className="bg-gray-100 p-4 border-t" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
-                  <div className="max-w-md mx-auto space-y-4">
-                    {/* Farm Selector */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Select Field</label>
-                      <Select value={selectedFarm} onValueChange={setSelectedFarm}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose a field" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {farms.map((farm) => (
-                            <SelectItem key={farm.id} value={farm.id}>
-                              <div>
-                                <div className="font-medium">{farm.name}</div>
-                                <div className="text-sm text-gray-500">{farm.crop} • {farm.area}</div>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Error Message */}
-                    {analysisError && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        <p className="text-sm text-red-800">{analysisError}</p>
+            {/* Analysis Results */}
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+              <div className="max-w-md mx-auto space-y-4">
+                {/* Result Header Card */}
+                <div style={{
+                  background: "#fff",
+                  borderRadius: "16px",
+                  padding: "20px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.1)"
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "16px"
+                  }}>
+                    <div>
+                      <div style={{ fontSize: "20px", fontWeight: "700" }}>
+                        {scanResult.cropType}
                       </div>
-                    )}
-
-                    {/* Action Buttons */}
-                    <div className="flex space-x-3">
-                      <Button
-                        onClick={retakePhoto}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Retake
-                      </Button>
-                      <Button
-                        onClick={uploadScan}
-                        disabled={!selectedFarm || isUploading}
-                        className="flex-1 bg-green-600 hover:bg-green-700"
-                      >
-                        {isUploading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Analyzing...
-                          </>
-                        ) : (
-                          <>
-                            <Leaf className="w-4 h-4 mr-2" />
-                            Analyze & Save
-                          </>
-                        )}
-                      </Button>
+                      <div style={{ fontSize: "14px", color: "#666" }}>
+                        {scanResult.disease || "No disease detected"}
+                      </div>
+                    </div>
+                    <div style={{
+                      background: getSeverityColor(scanResult.severity),
+                      color: "#fff",
+                      padding: "6px 14px",
+                      borderRadius: "20px",
+                      fontWeight: "600",
+                      fontSize: "13px",
+                      textTransform: "capitalize"
+                    }}>
+                      {scanResult.severity}
                     </div>
                   </div>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Analysis Results */}
-                <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-                  <div className="max-w-md mx-auto space-y-4">
-                    {/* Result Header */}
-                    <div className="bg-white rounded-lg p-4 shadow">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-lg">Analysis Results</h3>
-                        <Badge className={
-                          scanResult.result.severity === 'healthy' ? 'bg-green-100 text-green-800' :
-                          scanResult.result.severity === 'mild' ? 'bg-yellow-100 text-yellow-800' :
-                          scanResult.result.severity === 'moderate' ? 'bg-orange-100 text-orange-800' :
-                          'bg-red-100 text-red-800'
-                        }>
-                          {scanResult.result.severity}
-                        </Badge>
+
+                  {/* Confidence bar */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "13px",
+                      marginBottom: "4px"
+                    }}>
+                      <span>AI Confidence</span>
+                      <span style={{ fontWeight: "700" }}>{scanResult.confidence}%</span>
+                    </div>
+                    <div style={{
+                      background: "#e5e7eb",
+                      borderRadius: "4px",
+                      height: "8px"
+                    }}>
+                      <div style={{
+                        background: getSeverityColor(scanResult.severity),
+                        width: `${scanResult.confidence}%`,
+                        height: "100%",
+                        borderRadius: "4px",
+                        transition: "width 0.5s"
+                      }} />
+                    </div>
+                  </div>
+
+                  {/* Urgency */}
+                  <div style={{
+                    background: "#fef9c3",
+                    border: "1px solid #fde047",
+                    borderRadius: "8px",
+                    padding: "10px 14px",
+                    marginBottom: "16px",
+                    fontWeight: "600",
+                    fontSize: "14px"
+                  }}>
+                    {getUrgencyLabel(scanResult.urgency)}
+                    {scanResult.urgency === "immediate" &&
+                      ` — Spread Risk: ${scanResult.spreadRisk?.toUpperCase()}`}
+                  </div>
+
+                  {/* Treatment */}
+                  {!scanResult.isHealthy && scanResult.treatment && (
+                    <div style={{ marginBottom: "16px" }}>
+                      <div style={{
+                        fontWeight: "700",
+                        marginBottom: "8px",
+                        fontSize: "15px"
+                      }}>
+                        💊 Treatment
                       </div>
-
-                      {/* Captured Image Thumbnail */}
-                      <div className="mb-4">
-                        <img 
-                          src={capturedImage} 
-                          alt="Analyzed crop"
-                          className="w-full h-48 object-cover rounded-lg"
-                        />
+                      <div style={{
+                        background: "#f0fdf4",
+                        borderRadius: "8px",
+                        padding: "12px",
+                        fontSize: "14px",
+                        lineHeight: "1.8"
+                      }}>
+                        <div><strong>Chemical:</strong> {scanResult.treatment.chemical}</div>
+                        <div><strong>Dosage:</strong> {scanResult.treatment.dosage}</div>
+                        <div><strong>Method:</strong> {scanResult.treatment.applicationMethod}</div>
+                        <div><strong>Frequency:</strong> {scanResult.treatment.frequency}</div>
                       </div>
-
-                      {/* Analysis Details */}
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase">Disease Detected</label>
-                          <p className="text-lg font-semibold capitalize">
-                            {scanResult.result.disease_class?.replace('_', ' ') || 'Unknown'}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="text-xs text-gray-500 uppercase">Plant Type</label>
-                          <p className="text-base">{scanResult.result.plant_type || 'Crop'}</p>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-xs text-gray-500 uppercase">Confidence</label>
-                            <p className="text-2xl font-bold text-green-600">
-                              {((scanResult.result.confidence || 0) * 100).toFixed(1)}%
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <label className="text-xs text-gray-500 uppercase">Severity</label>
-                            <p className="text-lg font-semibold capitalize">
-                              {scanResult.result.severity || 'Unknown'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {scanResult.result.description && (
-                          <div className="pt-2 border-t">
-                            <label className="text-xs text-gray-500 uppercase">Description</label>
-                            <p className="text-sm text-gray-700 mt-1">
-                              {scanResult.result.description}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Treatment Info (if disease_info available) */}
-                      {scanResult.disease_info && (
-                        <div className="pt-3 border-t">
-                          <p className="text-sm font-semibold mb-2">Recommendations</p>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="text-xs font-medium text-gray-500">Treatment</p>
-                              <ul className="text-sm list-disc list-inside">
-                                {scanResult.disease_info.treatment?.map((item: string, i: number) => (
-                                  <li key={i} className="text-gray-700">{item}</li>
-                                )) || <li className="text-gray-500">Consult an agricultural expert</li>}
-                              </ul>
-                            </div>
-                            <div>
-                              <p className="text-xs font-medium text-gray-500">Prevention</p>
-                              <ul className="text-sm list-disc list-inside">
-                                {scanResult.disease_info.prevention?.map((item: string, i: number) => (
-                                  <li key={i} className="text-gray-700">{item}</li>
-                                )) || <li className="text-gray-500">Maintain good farming practices</li>}
-                              </ul>
-                            </div>
-                          </div>
+                      {scanResult.organicAlternative && (
+                        <div style={{
+                          background: "#ecfdf5",
+                          borderRadius: "8px",
+                          padding: "10px",
+                          marginTop: "8px",
+                          fontSize: "13px"
+                        }}>
+                          🌿 <strong>Organic Option:</strong> {scanResult.organicAlternative}
                         </div>
                       )}
-
-                      {/* Success Message */}
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-4">
-                        <p className="text-sm text-green-800 flex items-center">
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Scan saved to your farm records
-                        </p>
-                      </div>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Bottom Close Button */}
-                <div className="bg-gray-100 p-4 border-t" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
-                  <div className="max-w-md mx-auto">
-                    <Button 
-                      onClick={() => {
-                        if (onClose) onClose()
+                  {/* Prevention Tips */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ fontWeight: "700", marginBottom: "8px" }}>
+                      🛡️ Prevention Tips
+                    </div>
+                    {scanResult.preventionTips?.map((tip: string, i: number) => (
+                      <div key={i} style={{
+                        fontSize: "13px",
+                        color: "#374151",
+                        padding: "4px 0",
+                        borderBottom: "1px solid #f3f4f6"
+                      }}>
+                        {i + 1}. {tip}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      onClick={() => handleShare(scanResult)}
+                      style={{
+                        flex: 1,
+                        background: "#25D366",
+                        color: "#fff",
+                        border: "none",
+                        padding: "12px",
+                        borderRadius: "8px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        fontSize: "14px"
                       }}
-                      className="w-full bg-green-600 hover:bg-green-700"
                     >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Done
-                    </Button>
+                      📱 Share via WhatsApp
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const { generateSprayMapPDF } = await import('@/utils/generateSprayMap')
+                        generateSprayMapPDF(scanResult, farms.find(f => f.id === selectedFarm)?.name, user?.displayName || 'Farmer')
+                      }}
+                      style={{
+                        flex: 1,
+                        background: "#16a34a",
+                        color: "#fff",
+                        border: "none",
+                        padding: "12px",
+                        borderRadius: "8px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        fontSize: "14px"
+                      }}
+                    >
+                      🗺️ Spray Map PDF
+                    </button>
                   </div>
                 </div>
-              </>
-            )}
+              </div>
+            </div>
+
+            {/* Bottom Close Button */}
+            <div className="bg-gray-100 p-4 border-t" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)' }}>
+              <div className="max-w-md mx-auto">
+                <Button
+                  onClick={() => {
+                    if (onClose) onClose()
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Done
+                </Button>
+              </div>
+            </div>
           </>
         )}
 
@@ -561,4 +722,14 @@ export function CameraScan({ user, onScanComplete, onClose }: CameraScanProps) {
       </div>
     </div>
   )
+}
+
+function getSeverityColor(severity: string): string {
+  switch (severity) {
+    case 'healthy': return '#16a34a'
+    case 'mild': return '#ca8a04'
+    case 'moderate': return '#ea580c'
+    case 'severe': return '#dc2626'
+    default: return '#6b7280'
+  }
 }

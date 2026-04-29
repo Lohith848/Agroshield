@@ -22,6 +22,7 @@ import {
 import { CameraScan } from '@/components/scan/camera-scan'
 import { FieldMap } from '@/components/maps/field-map'
 import { InfectionHeatmap } from '@/components/maps/infection-heatmap'
+import { MarketPriceWidget } from '@/components/dashboard/market-price-widget'
 import { getWeatherByCoords, getWeatherIconUrl } from '@/lib/weather'
 import { getAgriculturalNews, formatNewsDate, getNewsCategory } from '@/lib/news'
 
@@ -39,10 +40,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [loadingWeather, setLoadingWeather] = useState(true)
   const [loadingNews, setLoadingNews] = useState(true)
 
-  const profile = user.profile
+   const profile = user.profile
+   const firstName = (user.displayName || profile?.name || 'Farmer').split(' ')[0]
 
-  // Fetch weather on component mount
-  useEffect(() => {
+   // Fetch weather on component mount
+   useEffect(() => {
     const fetchWeather = async () => {
       // Try to get user's location from profile or use default (Tamil Nadu center)
       const lat = profile?.location_lat || 11.1271
@@ -191,17 +193,17 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 <LogOut className="w-4 h-4 md:mr-2" />
                 <span className="hidden md:inline">Logout</span>
               </Button>
-              <div className="flex items-center">
-                <Avatar className="w-8 h-8 mr-2">
-                  <AvatarFallback className="bg-green-100 text-green-800">
-                    {profile?.name?.charAt(0) || 'U'}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden sm:block">
-                  <p className="text-sm font-medium text-gray-900">{profile?.name || 'User'}</p>
-                  <p className="text-xs text-gray-500">{profile?.role || 'Farmer'}</p>
-                </div>
-              </div>
+               <div className="flex items-center">
+                 <Avatar className="w-8 h-8 mr-2">
+                   <AvatarFallback className="bg-green-100 text-green-800">
+                     {firstName.charAt(0) || 'U'}
+                   </AvatarFallback>
+                 </Avatar>
+                 <div className="hidden sm:block">
+                   <p className="text-sm font-medium text-gray-900">{firstName}</p>
+                   <p className="text-xs text-gray-500">{profile?.role || 'Farmer'}</p>
+                 </div>
+               </div>
             </div>
           </div>
         </div>
@@ -261,9 +263,14 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               </div>
             </CardContent>
           </Card>
-        )}
+         )}
 
-        {/* Stats Grid */}
+         {/* Market Prices */}
+         <div className="mb-6">
+           <MarketPriceWidget cropType="Tomato" />
+         </div>
+
+         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {stats.map((stat, index) => (
             <Card key={index}>

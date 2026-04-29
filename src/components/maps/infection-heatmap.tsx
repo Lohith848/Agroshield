@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { 
-  MapPin, 
-  Plus, 
-  Trash2, 
+import {
+  MapPin,
+  Plus,
+  Trash2,
   Thermometer
 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 // Dynamically import Leaflet
 const MapContainer = dynamic(
@@ -112,26 +113,38 @@ export function InfectionHeatmap({ user, selectedFarmId }: InfectionHeatmapProps
     'Mosaic Virus'
   ]
 
-  // Load scan data from backend
+  // Load scan data from Supabase
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
       try {
-        const farmId = selectedFarmId || '1'
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/heatmap/${farmId}`)
-        if (response.ok) {
-          const data = await response.json()
-          setScanData(data.features?.map((f: any) => ({
-            id: f.properties?.scan_id || Math.random().toString(),
-            farm_id: farmId,
-            disease_class: f.properties?.disease || 'Unknown',
-            severity: f.properties?.severity || 'mild',
-            confidence: f.properties?.confidence || 0.5,
-            gps_lat: f.geometry?.coordinates[1] || 0,
-            gps_lng: f.geometry?.coordinates[0] || 0,
-            created_at: f.properties?.timestamp || new Date().toISOString()
-          })) || [])
+        if (!supabase) {
+          console.error('Supabase not initialized')
+          setLoading(false)
+          return
         }
+        const farmId = selectedFarmId || '1'
+        const { data, error } = await supabase!
+          .from('scans')
+          .select('id, disease_class, severity, confidence, gps_lat, gps_lng, created_at')
+          .eq('farm_id', farmId)
+          .order('created_at', { ascending: false })
+          .limit(100)
+
+        if (error) throw error
+
+        setScanData(
+          (data || []).map(s => ({
+            id: s.id,
+            farm_id: farmId,
+            disease_class: s.disease_class,
+            severity: s.severity as 'healthy' | 'mild' | 'moderate' | 'severe',
+            confidence: s.confidence,
+            gps_lat: s.gps_lat || 11.1271,
+            gps_lng: s.gps_lng || 78.6569,
+            created_at: s.created_at
+          }))
+        )
       } catch (error) {
         console.error('Error loading heatmap data:', error)
       } finally {

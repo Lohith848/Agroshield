@@ -120,8 +120,13 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         throw new Error('No user returned after verification')
       }
 
-      // For sign-up, create profile
+      // For sign-up, create profile and update user metadata
       if (!isLogin) {
+        // Update user metadata with display name
+        await supabase.auth.updateUser({
+          data: { display_name: formData.name }
+        })
+
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
@@ -141,20 +146,24 @@ export function AuthFormEmail({ onSuccess }: AuthFormProps) {
         }
       }
 
-      // Fetch user profile
+      // Fetch user profile (including updated metadata)
+      const { data: { user: updatedUser } } = await supabase.auth.getUser()
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
-      
+
+      // Merge user and profile, preferring display_name from user_metadata
+      const displayName = updatedUser?.user_metadata?.display_name || profile?.name || 'Farmer'
+
       // Save user session to localStorage
       if (typeof window !== 'undefined') {
-        localStorage.setItem('agroshield_user', JSON.stringify({ ...user, profile }))
-        console.log('💾 Session saved for:', user.email)
+        localStorage.setItem('agroshield_user', JSON.stringify({ ...updatedUser, profile, displayName }))
+        console.log('💾 Session saved for:', updatedUser?.email || user.email)
       }
-      
-      onSuccess({ ...user, profile })
+
+      onSuccess({ ...updatedUser, profile, displayName })
       
     } catch (error) {
       console.error('Error verifying OTP:', error)
