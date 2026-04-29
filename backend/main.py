@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 import uvicorn
 import requests
-from ai_service import detection_service, initialize_ai_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -426,6 +425,8 @@ async def startup_event():
     """Initialize services on startup"""
     logger.info("🚀 AgroShield API starting...")
     try:
+        # Lazy import to avoid import-time failures
+        from ai_service import initialize_ai_service
         initialize_ai_service()
         logger.info("✅ AI service initialized (YOLO model loaded)")
     except Exception as e:
@@ -442,6 +443,7 @@ async def startup_event():
 async def get_disease_information(disease_class: str):
     """Get detailed information about a specific disease"""
     try:
+        from ai_service import detection_service
         disease_info = detection_service.get_disease_info(disease_class)
         return disease_info
     except Exception as e:
