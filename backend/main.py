@@ -61,19 +61,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supabase client - safe initialization
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+# Supabase client - initialize as None, will be set in startup
+supabase: Client | None = None
 
-if not supabase_url or not supabase_key:
-    logger.warning("⚠️  Supabase env vars not set — database features disabled")
-    supabase = None
-else:
+def init_supabase():
+    """Initialize Supabase client safely at startup"""
+    global supabase
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    
+    if not supabase_url or not supabase_key:
+        logger.warning("⚠️  Supabase env vars not set — database features disabled")
+        supabase = None
+        return
+    
     try:
         supabase = create_client(supabase_url, supabase_key)
         logger.info("✅ Supabase client initialized")
     except Exception as e:
         logger.error(f"❌ Supabase initialization failed: {e}")
+        logger.error(f"   URL: {supabase_url[:30]}...")
+        logger.error(f"   Key length: {len(supabase_key)} chars")
         supabase = None
 
 # Security
@@ -427,15 +435,19 @@ def calculate_health_score(severity_counts):
 async def startup_event():
     """Initialize services on startup"""
     logger.info("🚀 AgroShield API starting...")
+    
+    # Initialize Supabase (safe)
+    init_supabase()
+    
+    # Initialize AI service (YOLO)
     try:
-        # Lazy import to avoid import-time failures
         from ai_service import initialize_ai_service
         initialize_ai_service()
         logger.info("✅ AI service initialized (YOLO model loaded)")
     except Exception as e:
         logger.error(f"⚠️  AI service initialization warning: {e}")
     
-    # Test Gemini availability (won't crash if missing)
+    # Check Gemini configuration
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         logger.info("✅ GEMINI_API_KEY is configured")
