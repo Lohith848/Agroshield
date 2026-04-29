@@ -9,7 +9,7 @@ passlib[bcrypt]>=1.7.4,<2.0
 
 # Database & API clients
 supabase>=1.0.4,<2.0
-# supabase requires httpx>=0.24,<0.25 which depends on httpcore<0.18
+# supabase 1.x requires httpx>=0.24,<0.25 → httpcore<0.18
 httpx>=0.24.0,<0.25.0
 httpcore>=0.15.0,<0.18.0
 requests>=2.31.0,<3.0
