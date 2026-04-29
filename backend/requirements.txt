@@ -1,26 +1,47 @@
+# Core web framework
 fastapi>=0.104.0,<1.0
 uvicorn>=0.24.0,<1.0
 python-multipart>=0.0.6,<0.1
+
+# Security & auth
 python-jose[cryptography]>=3.3.0,<4.0
 passlib[bcrypt]>=1.7.4,<2.0
+
+# Database & API clients
 supabase>=1.0.4,<2.0
+# Critical: supabase requires httpx>=0.24,<0.25 and httpcore>=1.0,<2.0
+# Python 3.14 needs httpcore>=1.0.4 to avoid typing.Union __module__ bug
+httpx>=0.24.0,<0.25.0
+httpcore>=1.0.4,<2.0
+requests>=2.31.0,<3.0
+
+# Environment & config
+python-dotenv>=1.0.0,<2.0
+
+# AI/ML
 ultralytics>=8.0.0,<9.0
 onnxruntime>=1.24.0,<2.0
 pillow>=10.0.0,<11.0
-python-dotenv>=1.0.0,<2.0
+google-generativeai>=0.8.0,<1.0
+protobuf>=3.20.0,<5.0
+
+# Pydantic validation
 pydantic>=2.5.0,<3.0
 pydantic-settings>=2.1.0,<3.0
-# Note: supabase requires httpx>=0.24.0,<0.25.0
-httpx>=0.24.0,<0.25.0
-requests>=2.31.0,<3.0
+
+# Task queue & cache
 redis>=5.0.0,<6.0
 celery>=5.3.0,<6.0
+
+# Cloud & external services
 google-cloud-storage>=2.10.0,<3.0
 firebase-admin>=6.2.0,<7.0
 twilio>=8.10.0,<9.0
+
+# Geospatial
 geopy>=2.4.0,<3.0
 geojson>=3.1.0,<4.0
+
+# Testing
 pytest>=7.4.0,<8.0
 pytest-asyncio>=0.21.0,<1.0
-google-generativeai>=0.8.0,<1.0
-protobuf>=3.20.0,<5.0
